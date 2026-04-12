@@ -1,0 +1,117 @@
+import { useEffect } from 'react';
+import { DataGrid } from './components/DataGrid';
+import { SummaryPanel } from './components/SummaryPanel';
+import { OperationsPanel } from './components/OperationsPanel';
+import { StepsPanel } from './components/StepsPanel';
+import { CodePreview } from './components/CodePreview';
+import { Toolbar } from './components/Toolbar';
+import { useKensaStore } from './state/store';
+import { onMessage, postMessage } from './vscodeApi';
+
+export function App() {
+  const {
+    slice,
+    mode,
+    showSummaryPanel,
+    showOperationsPanel,
+    showCodePreview,
+    loading,
+    error,
+    setSlice,
+    setInsights,
+    setColumnStats,
+    setMode,
+    setEngine,
+    setFileName,
+    addStep,
+    removeStep,
+    setError,
+    setFlashFillExpression,
+    setDiff
+  } = useKensaStore();
+
+  // Single subscription to extension messages; the store absorbs everything.
+  useEffect(() => {
+    const off = onMessage((msg) => {
+      switch (msg.type) {
+        case 'bootstrap':
+          setMode(msg.mode);
+          setEngine(msg.engine);
+          setFileName(msg.fileName);
+          break;
+        case 'dataSlice':
+          setSlice(msg.slice);
+          break;
+        case 'columnStats':
+          setColumnStats(msg.columnIndex, msg.stats);
+          break;
+        case 'allColumnInsights':
+          setInsights(msg.insights);
+          break;
+        case 'operationApplied':
+          addStep(msg.step);
+          setSlice(msg.slice);
+          setDiff(msg.diff ?? null);
+          break;
+        case 'stepRemoved':
+          removeStep(msg.stepId);
+          setSlice(msg.slice);
+          setDiff(null);
+          break;
+        case 'modeChanged':
+          setMode(msg.mode);
+          break;
+        case 'engineStatus':
+          setEngine(msg.engine);
+          break;
+        case 'error':
+          setError(msg.message);
+          break;
+        case 'flashFillResult':
+          setFlashFillExpression(msg.columnIndex, msg.expression);
+          break;
+      }
+    });
+    postMessage({ type: 'ready' });
+    return off;
+  }, [
+    setSlice,
+    setInsights,
+    setColumnStats,
+    setMode,
+    setEngine,
+    setFileName,
+    addStep,
+    removeStep,
+    setError,
+    setFlashFillExpression,
+    setDiff
+  ]);
+
+  return (
+    <div className="kensa-app">
+      <Toolbar />
+      <div className={`kensa-body mode-${mode}`}>
+        {showOperationsPanel && (
+          <aside className="kensa-sidebar kensa-sidebar-left">
+            <OperationsPanel />
+            <StepsPanel />
+          </aside>
+        )}
+
+        <main className="kensa-main">
+          {error && <div className="kensa-error-banner">{error}</div>}
+          {loading && !slice && <div className="kensa-placeholder">Loading dataset…</div>}
+          {slice && <DataGrid slice={slice} />}
+          {showCodePreview && <CodePreview />}
+        </main>
+
+        {showSummaryPanel && (
+          <aside className="kensa-sidebar kensa-sidebar-right">
+            <SummaryPanel />
+          </aside>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/webview",
+    "rootDir": "src",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["react", "react-dom"],
+    "sourceMap": true,
+    "declaration": false
+  },
+  "include": ["src/webview/**/*.ts", "src/webview/**/*.tsx", "src/shared/**/*.ts"],
+  "exclude": ["src/extension/**/*"]
+}

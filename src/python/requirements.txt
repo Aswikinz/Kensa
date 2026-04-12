@@ -1,0 +1,5 @@
+pandas>=1.2.0
+numpy
+# Optional — only needed if you open these file types from Editing mode.
+pyarrow>=10.0.0
+openpyxl>=3.0.0

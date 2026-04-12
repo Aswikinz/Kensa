@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//usr/local/bin/**)",
+      "Bash(find / -name \"node\" -executable)",
+      "Bash(export PATH=\"/home/nyx/.config/JetBrains/WebStorm2025.3/node/versions/24.12.0/bin:$PATH\")",
+      "Bash(npm --version)",
+      "Bash(npm install:*)",
+      "Bash(cargo check:*)",
+      "Bash(./node_modules/.bin/tsc --noEmit -p tsconfig.extension.json)",
+      "Bash(./node_modules/.bin/tsc --noEmit -p tsconfig.webview.json)",
+      "Bash(npm uninstall:*)",
+      "Bash(node scripts/test.mjs)",
+      "Bash(node scripts/build.mjs)",
+      "Bash(./node_modules/.bin/napi --version)",
+      "Bash(./node_modules/.bin/napi build:*)",
+      "Bash(../../node_modules/.bin/napi build:*)",
+      "Bash(/home/nyx/Documents/VS-Extentions/Kensa/node_modules/.bin/napi build:*)",
+      "Bash(grep -E \"node$|index\")",
+      "Bash(node -e ':*)",
+      "Bash(python3 -c \"import pandas; print\\('pandas', pandas.__version__\\)\")",
+      "Bash(pip install:*)",
+      "Bash(python3 src/python/kensa_helpers.py:*)",
+      "Bash(python3 -c ':*)",
+      "Bash(cargo test:*)"
+    ]
+  }
+}

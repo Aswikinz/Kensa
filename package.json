@@ -1,0 +1,188 @@
+{
+  "name": "kensa",
+  "displayName": "Kensa",
+  "description": "Visual tabular data exploration and cleaning for VS Code. Rust-powered viewer with optional Python/Pandas code-generating editor.",
+  "version": "0.1.0",
+  "publisher": "kensa",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kensa-dev/kensa"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Data Science",
+    "Notebooks",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "csv",
+    "parquet",
+    "excel",
+    "pandas",
+    "dataframe",
+    "data wrangling",
+    "jupyter"
+  ],
+  "main": "./dist/extension/extension.js",
+  "activationEvents": [
+    "onCommand:kensa.openFile",
+    "onCommand:kensa.openFromExplorer",
+    "onCommand:kensa.openVariable",
+    "onCommand:kensa.clearRuntime",
+    "onCommand:kensa.exportCode",
+    "onCommand:kensa.exportData"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "kensa.openFile",
+        "title": "Kensa: Open File",
+        "category": "Kensa"
+      },
+      {
+        "command": "kensa.openFromExplorer",
+        "title": "Open in Kensa",
+        "category": "Kensa"
+      },
+      {
+        "command": "kensa.openVariable",
+        "title": "Kensa: Open Variable",
+        "category": "Kensa"
+      },
+      {
+        "command": "kensa.clearRuntime",
+        "title": "Kensa: Clear Cached Runtime",
+        "category": "Kensa"
+      },
+      {
+        "command": "kensa.exportCode",
+        "title": "Kensa: Export Code to Notebook",
+        "category": "Kensa"
+      },
+      {
+        "command": "kensa.exportData",
+        "title": "Kensa: Export Data to File",
+        "category": "Kensa"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "kensa.openFromExplorer",
+          "when": "resourceExtname =~ /\\.(csv|tsv|parquet|xlsx|xls|jsonl)$/",
+          "group": "navigation@20"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "kensa.openFromExplorer",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Kensa",
+      "properties": {
+        "kensa.defaultMode": {
+          "type": "string",
+          "enum": [
+            "viewing",
+            "editing"
+          ],
+          "default": "viewing",
+          "description": "Default mode when opening a file."
+        },
+        "kensa.grid.defaultColumnWidth": {
+          "type": "number",
+          "default": 200,
+          "description": "Default column width in pixels."
+        },
+        "kensa.grid.showColumnStats": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show quick insights in column headers."
+        },
+        "kensa.defaultFilter": {
+          "type": "string",
+          "enum": [
+            "quick",
+            "advanced"
+          ],
+          "default": "quick",
+          "description": "Default filter UI to show."
+        },
+        "kensa.panelsOnFocus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-open side panels whenever the Kensa editor receives focus."
+        },
+        "kensa.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the Python interpreter. Empty string = auto-detect."
+        },
+        "kensa.startInEditModeForFiles": {
+          "type": "boolean",
+          "default": false,
+          "description": "When opening a file, start directly in Editing mode (requires Python)."
+        },
+        "kensa.startInEditModeForNotebooks": {
+          "type": "boolean",
+          "default": false,
+          "description": "When launching from a notebook, start directly in Editing mode."
+        },
+        "kensa.rust.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use the native Rust engine. Disable to force Python fallback."
+        }
+      }
+    },
+    "notebookRenderer": [
+      {
+        "id": "kensa-dataframe-renderer",
+        "displayName": "Kensa DataFrame Preview",
+        "entrypoint": "./dist/webview/renderer.js",
+        "mimeTypes": [
+          "application/vnd.kensa.dataframe+json"
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "build:rust": "napi build --platform --release --cargo-cwd crates/kensa-engine --js crates/kensa-engine/index.js --dts crates/kensa-engine/index.d.ts crates/kensa-engine",
+    "build:rust:debug": "napi build --platform --cargo-cwd crates/kensa-engine --js crates/kensa-engine/index.js --dts crates/kensa-engine/index.d.ts crates/kensa-engine",
+    "build:ts": "node scripts/build.mjs",
+    "build:ts:watch": "node scripts/build.mjs --watch",
+    "build": "npm run build:rust:debug && npm run build:ts",
+    "typecheck": "tsc --noEmit -p tsconfig.extension.json && tsc --noEmit -p tsconfig.webview.json",
+    "lint": "eslint src --ext .ts,.tsx",
+    "test": "node scripts/test.mjs",
+    "test:rust": "cargo test --manifest-path crates/kensa-engine/Cargo.toml",
+    "package": "vsce package",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.0",
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^2.22.0",
+    "esbuild": "^0.20.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "zustand": "^4.5.0"
+  }
+}

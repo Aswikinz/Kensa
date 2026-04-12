@@ -1,0 +1,22 @@
+node_modules/
+dist/
+out/
+*.vsix
+.vscode-test/
+
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
+# napi-rs generated artifacts
+crates/kensa-engine/*.node
+crates/kensa-engine/index.js
+crates/kensa-engine/index.d.ts
+crates/kensa-engine/npm/
+
+# Editor
+.DS_Store
+*.log
+.env
+.env.local

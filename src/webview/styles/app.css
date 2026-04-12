@@ -1,0 +1,704 @@
+/* All colors pull from VS Code theme variables so Kensa adapts automatically
+ * to the user's chosen theme. No hardcoded hex values. */
+
+:root {
+  --kensa-border: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  --kensa-muted: var(--vscode-descriptionForeground, rgba(128, 128, 128, 0.85));
+  --kensa-accent: var(--vscode-focusBorder, #007acc);
+  --kensa-row-alt: var(--vscode-editor-inactiveSelectionBackground, rgba(128, 128, 128, 0.06));
+  --kensa-row-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
+  --kensa-selection: var(--vscode-editor-selectionBackground, rgba(0, 122, 204, 0.3));
+  --kensa-button-bg: var(--vscode-button-background, #0e639c);
+  --kensa-button-fg: var(--vscode-button-foreground, #ffffff);
+  --kensa-input-bg: var(--vscode-input-background, rgba(0, 0, 0, 0.2));
+  --kensa-input-fg: var(--vscode-input-foreground, inherit);
+  --kensa-input-border: var(--vscode-input-border, var(--kensa-border));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.kensa-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font-size: 13px;
+}
+
+/* Toolbar -------------------------------------------------------------------*/
+.kensa-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--kensa-border);
+  gap: 16px;
+  background: var(--vscode-editor-background);
+}
+
+.kensa-toolbar-left,
+.kensa-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.kensa-brand {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.kensa-filename {
+  color: var(--kensa-muted);
+}
+
+.kensa-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--kensa-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.kensa-mode-btn {
+  background: transparent;
+  color: inherit;
+  border: none;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.kensa-mode-btn.kensa-mode-active {
+  background: var(--kensa-accent);
+  color: var(--kensa-button-fg);
+}
+
+.kensa-engine-indicator,
+.kensa-row-count {
+  color: var(--kensa-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.kensa-icon-btn {
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.kensa-icon-btn:hover {
+  background: var(--kensa-row-hover);
+}
+
+/* Body layout ---------------------------------------------------------------*/
+.kensa-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.kensa-sidebar {
+  width: 280px;
+  min-width: 240px;
+  border-right: 1px solid var(--kensa-border);
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.kensa-sidebar-right {
+  border-right: none;
+  border-left: 1px solid var(--kensa-border);
+}
+
+.kensa-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.kensa-placeholder {
+  color: var(--kensa-muted);
+  padding: 12px;
+  font-style: italic;
+}
+
+.kensa-error-banner {
+  padding: 8px 12px;
+  background: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.1));
+  color: var(--vscode-inputValidation-errorForeground, inherit);
+  border-bottom: 1px solid var(--vscode-inputValidation-errorBorder, var(--kensa-border));
+}
+
+/* Data grid -----------------------------------------------------------------*/
+.kensa-grid {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.kensa-grid-header {
+  display: flex;
+  border-bottom: 1px solid var(--kensa-border);
+  background: var(--vscode-editor-background);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.kensa-grid-body {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.kensa-grid-body-inner {
+  position: relative;
+}
+
+.kensa-row {
+  border-bottom: 1px solid var(--kensa-border);
+}
+
+.kensa-row-alt {
+  background: var(--kensa-row-alt);
+}
+
+.kensa-row:hover {
+  background: var(--kensa-row-hover);
+}
+
+.kensa-row-number {
+  color: var(--kensa-muted);
+  text-align: right;
+  padding: 6px 8px;
+  font-variant-numeric: tabular-nums;
+  border-right: 1px solid var(--kensa-border);
+  font-size: 11px;
+}
+
+.kensa-row-number-header {
+  font-weight: 600;
+}
+
+.kensa-cell {
+  padding: 6px 8px;
+  border-right: 1px solid var(--kensa-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.kensa-cell-missing {
+  color: var(--kensa-muted);
+  font-style: italic;
+}
+
+.kensa-cell-selected {
+  background: var(--kensa-selection);
+}
+
+.kensa-cell-placeholder::before {
+  content: '…';
+  color: var(--kensa-muted);
+}
+
+/* Column header ------------------------------------------------------------*/
+.kensa-col-header {
+  position: relative;
+  border-right: 1px solid var(--kensa-border);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  user-select: none;
+}
+
+.kensa-col-header-selected {
+  background: var(--kensa-selection);
+}
+
+.kensa-col-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.kensa-col-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kensa-col-menu-btn {
+  background: transparent;
+  color: var(--kensa-muted);
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.kensa-col-dtype {
+  font-size: 10px;
+  color: var(--kensa-muted);
+  text-transform: lowercase;
+}
+
+.kensa-col-insight {
+  height: 42px;
+  display: flex;
+  align-items: flex-end;
+}
+
+.kensa-insight-placeholder {
+  height: 100%;
+  width: 100%;
+  background: var(--kensa-row-alt);
+  opacity: 0.5;
+}
+
+.kensa-col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 3;
+}
+
+.kensa-col-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--kensa-border);
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.kensa-col-menu button {
+  background: transparent;
+  color: inherit;
+  border: none;
+  padding: 6px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kensa-col-menu button:hover {
+  background: var(--kensa-row-hover);
+}
+
+/* Insight visualizations ---------------------------------------------------*/
+.kensa-hist {
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+  width: 100%;
+  gap: 1px;
+  position: relative;
+}
+
+.kensa-hist-bar {
+  flex: 1;
+  background: var(--kensa-accent);
+  min-height: 1px;
+  opacity: 0.75;
+}
+
+.kensa-freq {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.kensa-freq-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+}
+
+.kensa-freq-label {
+  flex: 0 0 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kensa-freq-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: var(--kensa-row-alt);
+}
+
+.kensa-freq-bar {
+  height: 100%;
+  background: var(--kensa-accent);
+  opacity: 0.75;
+}
+
+.kensa-insight-stats {
+  font-size: 9px;
+  color: var(--kensa-muted);
+  position: absolute;
+  bottom: -12px;
+  left: 0;
+}
+
+/* Summary panel ------------------------------------------------------------*/
+.kensa-summary-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.kensa-summary-sub {
+  font-size: 11px;
+  color: var(--kensa-muted);
+  margin-bottom: 10px;
+}
+
+.kensa-summary-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  margin: 0;
+}
+
+.kensa-summary-dl dt {
+  color: var(--kensa-muted);
+  font-size: 11px;
+}
+
+.kensa-summary-dl dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kensa-summary-hint {
+  margin-top: 12px;
+  color: var(--kensa-muted);
+  font-style: italic;
+}
+
+/* Operations panel ---------------------------------------------------------*/
+.kensa-operations-header {
+  margin-bottom: 8px;
+}
+
+.kensa-search,
+.kensa-input {
+  width: 100%;
+  padding: 5px 8px;
+  background: var(--kensa-input-bg);
+  color: var(--kensa-input-fg);
+  border: 1px solid var(--kensa-input-border);
+  border-radius: 3px;
+  font-family: var(--vscode-font-family);
+  font-size: 12px;
+}
+
+.kensa-textarea {
+  font-family: var(--vscode-editor-font-family, monospace);
+  resize: vertical;
+}
+
+.kensa-operations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kensa-op-category-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--kensa-muted);
+  margin-bottom: 4px;
+}
+
+.kensa-op-category ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kensa-op-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.kensa-op-item:hover {
+  background: var(--kensa-row-hover);
+}
+
+.kensa-op-title {
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.kensa-op-desc {
+  font-size: 11px;
+  color: var(--kensa-muted);
+  margin-bottom: 8px;
+}
+
+.kensa-linky {
+  background: transparent;
+  color: var(--kensa-accent);
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.kensa-param-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kensa-param-label {
+  font-size: 11px;
+  color: var(--kensa-muted);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.kensa-param-desc {
+  font-size: 10px;
+  color: var(--kensa-muted);
+}
+
+.kensa-param-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.kensa-btn {
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--kensa-border);
+  padding: 5px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: var(--vscode-font-family);
+}
+
+.kensa-btn-primary {
+  background: var(--kensa-button-bg);
+  color: var(--kensa-button-fg);
+  border-color: transparent;
+}
+
+.kensa-btn:hover {
+  background: var(--kensa-row-hover);
+}
+
+.kensa-btn-primary:hover {
+  background: var(--vscode-button-hoverBackground, var(--kensa-button-bg));
+}
+
+.kensa-multicol {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--kensa-input-border);
+  padding: 4px;
+  border-radius: 3px;
+}
+
+.kensa-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.kensa-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kensa-example-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.kensa-arrow {
+  color: var(--kensa-muted);
+}
+
+/* Steps panel --------------------------------------------------------------*/
+.kensa-steps-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--kensa-muted);
+  margin-bottom: 4px;
+}
+
+.kensa-steps-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kensa-step {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.kensa-step-label {
+  flex: 1;
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kensa-step-last .kensa-step-label {
+  background: var(--kensa-row-alt);
+}
+
+.kensa-step-num {
+  color: var(--kensa-muted);
+  margin-right: 4px;
+}
+
+.kensa-step-undo {
+  background: transparent;
+  border: none;
+  color: var(--kensa-muted);
+  cursor: pointer;
+  padding: 0 6px;
+}
+
+.kensa-step-undo:hover {
+  color: inherit;
+}
+
+/* Code preview -------------------------------------------------------------*/
+.kensa-code-preview {
+  border-top: 1px solid var(--kensa-border);
+  max-height: 40%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kensa-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--kensa-border);
+}
+
+.kensa-code-title {
+  color: var(--kensa-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.kensa-code-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.kensa-code-body-wrap {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  background: var(--vscode-editor-background);
+}
+
+.kensa-code-editor {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Python highlighter tokens — colors match VS Code's default dark+ theme but
+   stay theme-aware via token variables when available. */
+.kensa-code-editor .py-keyword {
+  color: var(--vscode-debugTokenExpression-name, #c586c0);
+}
+.kensa-code-editor .py-builtin {
+  color: var(--vscode-symbolIcon-functionForeground, #4ec9b0);
+}
+.kensa-code-editor .py-string {
+  color: var(--vscode-debugTokenExpression-string, #ce9178);
+}
+.kensa-code-editor .py-number {
+  color: var(--vscode-debugTokenExpression-number, #b5cea8);
+}
+.kensa-code-editor .py-comment {
+  color: var(--vscode-debugConsole-sourceForeground, #6a9955);
+  font-style: italic;
+}
+.kensa-code-editor .py-op {
+  color: var(--vscode-symbolIcon-operatorForeground, #d4d4d4);
+}
+
+/* Diff overlay -------------------------------------------------------------*/
+.diff-modified {
+  background: var(--vscode-diffEditor-insertedTextBackground, rgba(155, 185, 85, 0.2));
+}
+
+.diff-added {
+  background: var(--vscode-diffEditor-insertedLineBackground, rgba(155, 185, 85, 0.1));
+}
+
+.diff-removed {
+  background: var(--vscode-diffEditor-removedTextBackground, rgba(255, 0, 0, 0.15));
+  text-decoration: line-through;
+}
