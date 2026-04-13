@@ -34,6 +34,8 @@ export type WebviewToExtensionMessage =
   | { type: 'executeCustomCode'; code: string }
   | { type: 'searchColumns'; query: string }
   | { type: 'switchMode'; mode: EditorMode }
+  | { type: 'refreshSource' }
+  | { type: 'requestPreviewSlice'; start: number; end: number }
   | { type: 'inferFlashFill'; columnIndex: number; examples: Array<{ input: string; output: string }> };
 
 // Extension -> Webview ---------------------------------------------------------
@@ -54,6 +56,16 @@ export type ExtensionToWebviewMessage =
       code: string;
       slice: DataSlice | null;
       diff: DiffSummary | null;
+      /** Per-cell changed flag for the rows in `slice`. Shape is
+       *  rows × cols (rectangular). Empty array when the operation
+       *  doesn't produce cell-level diffs (row count changed, sort
+       *  applied, shape mismatch, etc.). */
+      changedMask: boolean[][];
+    }
+  | {
+      type: 'previewSlice';
+      slice: DataSlice;
+      changedMask: boolean[][];
     }
   | { type: 'previewCleared' }
   | {

@@ -11,6 +11,16 @@
 
 import { useKensaStore } from '../state/store';
 import { postMessage } from '../vscodeApi';
+import {
+  BoltIcon,
+  CodeIcon,
+  ExportIcon,
+  FilterIcon,
+  OperationsIcon,
+  RefreshIcon,
+  SummaryIcon,
+  TerminalIcon
+} from './icons';
 
 export function Toolbar() {
   const mode = useKensaStore((s) => s.mode);
@@ -21,6 +31,9 @@ export function Toolbar() {
   const switching = useKensaStore((s) => s.switching);
   const activeFilters = useKensaStore((s) => s.activeFilters);
   const activeSort = useKensaStore((s) => s.activeSort);
+  const showSummaryPanel = useKensaStore((s) => s.showSummaryPanel);
+  const showOperationsPanel = useKensaStore((s) => s.showOperationsPanel);
+  const showCodePreview = useKensaStore((s) => s.showCodePreview);
   const setSwitching = useKensaStore((s) => s.setSwitching);
   const clearAllFilters = useKensaStore((s) => s.clearAllFilters);
   const toggleSummaryPanel = useKensaStore((s) => s.toggleSummaryPanel);
@@ -84,7 +97,7 @@ export function Toolbar() {
                 : 'Active sort — click to clear'
             }
           >
-            <span className="kensa-filter-badge-icon">⧩</span>
+            <FilterIcon size={14} />
             <span className="kensa-filter-badge-label">
               {filterCount > 0
                 ? `${filterCount} filter${filterCount === 1 ? '' : 's'}`
@@ -94,47 +107,86 @@ export function Toolbar() {
           </button>
         )}
         <div
-          className="kensa-engine-indicator"
-          title={engine === 'rust' ? 'Rust engine — instant viewing' : 'Python engine — code generation'}
+          className={`kensa-engine-indicator kensa-engine-${engine}`}
+          title={
+            engine === 'rust'
+              ? 'Rust engine — instant native viewing'
+              : 'Python engine — code generation'
+          }
         >
-          {engine === 'rust' ? '⚡ Rust' : '🐍 Python'}
+          {engine === 'rust' ? <BoltIcon size={14} /> : <TerminalIcon size={14} />}
+          <span className="kensa-engine-label">{engine === 'rust' ? 'Rust' : 'Python'}</span>
         </div>
         <div className="kensa-row-count">
           {rowCount.toLocaleString()} × {colCount}
         </div>
-        <button
-          type="button"
-          className="kensa-icon-btn"
+        <IconButton
+          label={
+            source === 'variable'
+              ? 'Refresh from notebook variable'
+              : 'Re-read file from disk'
+          }
+          onClick={() => postMessage({ type: 'refreshSource' })}
+        >
+          <RefreshIcon />
+        </IconButton>
+        <IconButton
+          label="Operations panel"
+          active={showOperationsPanel}
           onClick={toggleOperationsPanel}
-          title="Operations panel"
         >
-          ⚙
-        </button>
-        <button
-          type="button"
-          className="kensa-icon-btn"
+          <OperationsIcon />
+        </IconButton>
+        <IconButton
+          label="Code preview panel"
+          active={showCodePreview}
           onClick={toggleCodePreview}
-          title="Code preview panel"
         >
-          {'</>'}
-        </button>
-        <button
-          type="button"
-          className="kensa-icon-btn"
+          <CodeIcon />
+        </IconButton>
+        <IconButton
+          label="Summary panel"
+          active={showSummaryPanel}
           onClick={toggleSummaryPanel}
-          title="Summary panel"
         >
-          ⓘ
-        </button>
-        <button
-          type="button"
-          className="kensa-icon-btn"
+          <SummaryIcon />
+        </IconButton>
+        <IconButton
+          label="Export data to file"
           onClick={() => postMessage({ type: 'exportData', format: 'csv' })}
-          title="Export data to file"
         >
-          ⇩
-        </button>
+          <ExportIcon />
+        </IconButton>
       </div>
     </div>
+  );
+}
+
+/** Square icon button used in the toolbar. Accepts an SVG icon as its
+ *  child (see `icons.tsx`). When `active` is true the button renders with
+ *  the VS Code active-toolbar background so you can tell the panel it
+ *  toggles is currently visible. */
+function IconButton({
+  label,
+  onClick,
+  active,
+  children
+}: {
+  readonly label: string;
+  readonly onClick: () => void;
+  readonly active?: boolean;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className={`kensa-icon-btn ${active ? 'kensa-icon-btn-active' : ''}`}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-pressed={active ?? undefined}
+    >
+      {children}
+    </button>
   );
 }

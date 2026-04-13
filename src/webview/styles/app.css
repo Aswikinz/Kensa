@@ -5,7 +5,12 @@
   --kensa-border: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
   --kensa-muted: var(--vscode-descriptionForeground, rgba(128, 128, 128, 0.85));
   --kensa-accent: var(--vscode-focusBorder, #007acc);
-  --kensa-row-alt: var(--vscode-editor-inactiveSelectionBackground, rgba(128, 128, 128, 0.06));
+  /* Zebra-stripe tint. We deliberately do NOT use
+     --vscode-editor-inactiveSelectionBackground — in most dark themes that
+     variable is a strong blue, which turns every alternate row into a
+     highlighted band. A theme-agnostic semi-transparent overlay keeps the
+     stripe subtle and never looks like a selection. */
+  --kensa-row-alt: rgba(127, 127, 127, 0.06);
   --kensa-row-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
   --kensa-selection: var(--vscode-editor-selectionBackground, rgba(0, 122, 204, 0.3));
   --kensa-button-bg: var(--vscode-button-background, #0e639c);
@@ -32,6 +37,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
+  min-height: 42px;
   border-bottom: 1px solid var(--kensa-border);
   gap: 16px;
   background: var(--vscode-editor-background);
@@ -41,7 +47,11 @@
 .kensa-toolbar-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+}
+
+.kensa-toolbar-right {
+  gap: 6px;
 }
 
 .kensa-brand {
@@ -136,23 +146,88 @@
   opacity: 1;
 }
 
-.kensa-engine-indicator,
+.kensa-engine-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--kensa-border);
+  font-size: 11px;
+  color: var(--kensa-muted);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.kensa-engine-indicator svg {
+  flex-shrink: 0;
+}
+
+.kensa-engine-rust {
+  border-color: var(--vscode-statusBarItem-warningBackground, rgba(255, 190, 0, 0.4));
+  color: var(--vscode-statusBarItem-warningBackground, #d4a017);
+}
+
+.kensa-engine-python {
+  border-color: var(--vscode-charts-blue, rgba(64, 156, 220, 0.5));
+  color: var(--vscode-charts-blue, #4ec9b0);
+}
+
+.kensa-engine-label {
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
 .kensa-row-count {
   color: var(--kensa-muted);
   font-variant-numeric: tabular-nums;
+  padding: 0 4px;
 }
 
 .kensa-icon-btn {
+  /* Square toolbar button with plenty of hit area. The child SVG icon is
+     centered and inherits currentColor. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   background: transparent;
-  color: inherit;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground, inherit));
   border: 1px solid transparent;
-  padding: 4px 8px;
-  border-radius: 3px;
+  border-radius: 5px;
   cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
 }
 
 .kensa-icon-btn:hover {
-  background: var(--kensa-row-hover);
+  background: var(--vscode-toolbar-hoverBackground, var(--kensa-row-hover));
+  color: var(--vscode-foreground, inherit);
+}
+
+.kensa-icon-btn:active {
+  transform: scale(0.95);
+}
+
+.kensa-icon-btn:focus-visible {
+  outline: 1px solid var(--kensa-accent);
+  outline-offset: 1px;
+}
+
+.kensa-icon-btn-active {
+  background: var(--vscode-toolbar-activeBackground, var(--kensa-selection));
+  color: var(--kensa-accent);
+}
+
+.kensa-icon-btn-active:hover {
+  background: var(--vscode-toolbar-activeBackground, var(--kensa-selection));
+  filter: brightness(1.15);
+}
+
+.kensa-icon-btn svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 /* Body layout ---------------------------------------------------------------*/

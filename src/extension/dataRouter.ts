@@ -23,7 +23,7 @@ import { getRustBridge, type RustDataEngine } from './rustBridge';
 
 export type DataSource =
   | { kind: 'file'; descriptor: FileDescriptor }
-  | { kind: 'variable'; name: string };
+  | { kind: 'variable'; name: string; notebookHint?: vscode.Uri };
 
 export class DataRouter {
   private rustEngine: RustDataEngine | null = null;
@@ -72,7 +72,7 @@ export class DataRouter {
   }
 
   async openVariable(name: string, notebookHint?: vscode.Uri): Promise<DatasetInfo> {
-    this.source = { kind: 'variable', name };
+    this.source = { kind: 'variable', name, notebookHint };
     this.mode = 'editing';
     this.steps = [];
     const backend = await this.kernelManager.ensureBackend();
@@ -80,6 +80,32 @@ export class DataRouter {
     // returning null — let it propagate so the webview shows the real reason
     // (missing extension, no kernel, variable doesn't exist, etc.).
     const picklePath = await this.kernelManager.extractVariableToPickle(name, notebookHint);
+    return backend.loadPickle(picklePath);
+  }
+
+  /** Re-pull the current source from disk (file) or from the live kernel
+   *  (notebook variable). Steps and view filters are dropped because they
+   *  may no longer apply to the new shape. Returns a fresh DatasetInfo. */
+  async refresh(): Promise<DatasetInfo> {
+    if (!this.source) {
+      throw new Error('Nothing to refresh — no dataset is open.');
+    }
+    this.steps = [];
+    if (this.source.kind === 'file') {
+      const descriptor = this.source.descriptor;
+      // File path: respect the current mode. If we're in viewing mode and
+      // Rust is available, re-read with Rust; otherwise re-read with Python.
+      if (this.mode === 'viewing' && this.rustEngine) {
+        return this.loadViaRust(descriptor);
+      }
+      return this.loadViaPython(descriptor);
+    }
+    // Variable: ask the kernel to pickle it again, then have Python reload.
+    const backend = await this.kernelManager.ensureBackend();
+    const picklePath = await this.kernelManager.extractVariableToPickle(
+      this.source.name,
+      this.source.notebookHint
+    );
     return backend.loadPickle(picklePath);
   }
 
@@ -170,22 +196,49 @@ export class DataRouter {
   }
 
   /** Run an operation's generated code against a preview copy of the
-   *  dataframe without committing it. Returns the generated code and, when
-   *  running under Python, a preview slice the webview can overlay as a diff.
-   *  In viewing mode we only return the code (preview requires Python). */
+   *  dataframe without committing it. Returns the generated code, the
+   *  first preview page (with a per-cell changed mask), and a full-df
+   *  diff summary (total cells modified, rows added/removed, etc.) that
+   *  reflects the ENTIRE preview_df — not just the first 500 rows. */
   async previewOperation(
     operationId: string,
     params: Record<string, unknown>
-  ): Promise<{ code: string; slice: DataSlice | null }> {
+  ): Promise<{
+    code: string;
+    slice: DataSlice | null;
+    changedMask: boolean[][];
+    diff: import('../shared/types').DiffSummary | null;
+  }> {
     const { code } = generateStepCode(operationId, params);
     if (this.mode === 'viewing') {
-      return { code, slice: null };
+      return { code, slice: null, changedMask: [], diff: null };
     }
     const backend = await this.kernelManager.ensureBackend();
-    const rawSlice = await backend.previewCode(code);
-    // The Python helper returns a DataSlice-shaped object; stamp it with the
-    // engine tag the webview expects.
-    return { code, slice: { ...rawSlice, engine: 'python' } };
+    const raw = await backend.previewCode(code);
+    const { changedMask, diff, ...sliceFields } = raw;
+    return {
+      code,
+      slice: { ...sliceFields, engine: 'python' },
+      changedMask: changedMask ?? [],
+      diff
+    };
+  }
+
+  /** Fetch another page of the currently-active preview. Used by the grid
+   *  when the user scrolls past the first page while in preview mode.
+   *  Returns both the slice and the per-cell changed mask for that window.
+   *  Does NOT re-run the operation — it reads from the stashed preview_df. */
+  async getPreviewSlice(
+    start: number,
+    end: number
+  ): Promise<{ slice: DataSlice; changedMask: boolean[][] }> {
+    const backend = await this.kernelManager.ensureBackend();
+    const raw = await backend.getPreviewSlice(start, end);
+    const { changedMask, ...sliceFields } = raw;
+    return {
+      slice: { ...sliceFields, engine: 'python' },
+      changedMask: changedMask ?? []
+    };
   }
 
   async applyOperation(operationId: string, params: Record<string, unknown>): Promise<OperationStep> {

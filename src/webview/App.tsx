@@ -30,6 +30,7 @@ export function App() {
     setFlashFillExpression,
     setDiff,
     setPreview,
+    mergePreviewSlice,
     clearPreview
   } = useKensaStore();
 
@@ -65,7 +66,10 @@ export function App() {
           clearPreview();
           break;
         case 'operationPreview':
-          setPreview(msg.slice, msg.diff, msg.code);
+          setPreview(msg.slice, msg.diff, msg.changedMask ?? [], msg.code);
+          break;
+        case 'previewSlice':
+          mergePreviewSlice(msg.slice, msg.changedMask ?? []);
           break;
         case 'previewCleared':
           clearPreview();
@@ -100,6 +104,7 @@ export function App() {
     setFlashFillExpression,
     setDiff,
     setPreview,
+    mergePreviewSlice,
     clearPreview
   ]);
 

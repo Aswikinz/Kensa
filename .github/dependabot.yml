@@ -1,0 +1,60 @@
+# Automated dependency + security updates for Kensa.
+# Dependabot will open weekly PRs for npm, cargo, and the GitHub Actions
+# workflow versions. Security advisories are opened as PRs immediately,
+# outside the weekly cadence.
+
+version: 2
+updates:
+  # TypeScript / React extension + webview
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "javascript"
+    commit-message:
+      prefix: "npm"
+      include: "scope"
+    groups:
+      # Group non-breaking (patch + minor) updates into a single PR so the
+      # review queue stays manageable.
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Rust native data engine
+  - package-ecosystem: "cargo"
+    directory: "/crates/kensa-engine"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "cargo"
+      include: "scope"
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions workflow versions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci"

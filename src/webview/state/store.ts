@@ -21,13 +21,24 @@ export interface KensaState {
   // Server state
   slice: DataSlice | null;
   // When set, the grid renders this slice (a what-if result of the currently
-  // selected operation) instead of `slice`, and the `diff` is overlaid on
-  // the rendered cells. Cleared when the user hits Cancel or Apply.
+  // selected operation) instead of `slice`. The slice is paginated — its
+  // `totalRows` matches the full preview_df on the Python side, but `rows`
+  // only holds the currently-loaded window. Scrolling triggers a
+  // `requestPreviewSlice` to load more rows.
   previewSlice: DataSlice | null;
+  /** Per-cell change flag for the rows in `previewSlice.rows`. Used by the
+   *  grid to paint yellow `.diff-modified` highlights on exactly the
+   *  cells that changed. Rectangular: mask[localRow][col]. Empty array
+   *  when the operation doesn't support cell-level diffs (row count
+   *  changed, sort applied, etc.). */
+  previewChangedMask: boolean[][];
   insights: QuickInsight[];
   statsByColumn: Record<number, ColumnStats>;
   steps: OperationStep[];
   diff: DiffSummary | null;
+  /** Full-dataset diff summary for the active preview. `rowsChanged` is
+   *  the total count across ALL rows of the preview_df, not just the
+   *  visible window — this is what the banner shows. */
   previewDiff: DiffSummary | null;
   mode: EditorMode;
   engine: EngineKind;
@@ -54,7 +65,13 @@ export interface KensaState {
 
   // Actions
   setSlice: (slice: DataSlice) => void;
-  setPreview: (slice: DataSlice | null, diff: DiffSummary | null, code: string) => void;
+  setPreview: (
+    slice: DataSlice | null,
+    diff: DiffSummary | null,
+    changedMask: boolean[][],
+    code: string
+  ) => void;
+  mergePreviewSlice: (slice: DataSlice, changedMask: boolean[][]) => void;
   clearPreview: () => void;
   setInsights: (insights: QuickInsight[]) => void;
   setColumnStats: (columnIndex: number, stats: ColumnStats) => void;
@@ -89,6 +106,7 @@ export interface KensaState {
 export const useKensaStore = create<KensaState>((set) => ({
   slice: null,
   previewSlice: null,
+  previewChangedMask: [],
   insights: [],
   statsByColumn: {},
   steps: [],
@@ -108,13 +126,40 @@ export const useKensaStore = create<KensaState>((set) => ({
   selectedOperationId: null,
   previewCode: '',
   flashFillExpressions: {},
-  showSummaryPanel: true,
+  // Every panel is collapsed by default — the initial experience is "just
+  // the grid". Users open side panels explicitly via the toolbar icons.
+  showSummaryPanel: false,
   showOperationsPanel: false,
   showCodePreview: false,
 
-  setSlice: (slice) => set({ slice, loading: false, error: null, previewSlice: null, previewDiff: null }),
-  setPreview: (slice, diff, code) => set({ previewSlice: slice, previewDiff: diff, previewCode: code }),
-  clearPreview: () => set({ previewSlice: null, previewDiff: null, previewCode: '' }),
+  setSlice: (slice) =>
+    set({
+      slice,
+      loading: false,
+      error: null,
+      previewSlice: null,
+      previewDiff: null,
+      previewChangedMask: []
+    }),
+  setPreview: (slice, diff, changedMask, code) =>
+    set({
+      previewSlice: slice,
+      previewDiff: diff,
+      previewChangedMask: changedMask,
+      previewCode: code
+    }),
+  mergePreviewSlice: (slice, changedMask) =>
+    // Called when a new preview window arrives from pagination. We replace
+    // the stored window — we don't accumulate slices — because the grid
+    // only renders one window at a time and old windows aren't visible.
+    set({ previewSlice: slice, previewChangedMask: changedMask }),
+  clearPreview: () =>
+    set({
+      previewSlice: null,
+      previewDiff: null,
+      previewChangedMask: [],
+      previewCode: ''
+    }),
   setInsights: (insights) => set({ insights }),
   setColumnStats: (columnIndex, stats) =>
     set((s) => ({ statsByColumn: { ...s.statsByColumn, [columnIndex]: stats } })),
@@ -123,12 +168,10 @@ export const useKensaStore = create<KensaState>((set) => ({
   removeStep: (stepId) => set((s) => ({ steps: s.steps.filter((x) => x.id !== stepId) })),
   setDiff: (diff) => set({ diff }),
   setMode: (mode) =>
-    set({
-      mode,
-      switching: false,
-      showOperationsPanel: mode === 'editing',
-      showCodePreview: mode === 'editing'
-    }),
+    // Just record the mode. Panel visibility is a pure user choice — the
+    // initial experience is "grid only" regardless of viewing vs editing,
+    // and the user opens side panels explicitly via the toolbar icons.
+    set({ mode, switching: false }),
   setEngine: (engine) => set({ engine }),
   setSource: (source) =>
     // Changing source = new panel load — drop any stale filter/sort state.

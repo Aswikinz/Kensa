@@ -1,0 +1,64 @@
+name: CodeQL
+
+# GitHub's built-in static analysis for security bugs. Runs on every push to
+# main, on PRs into main, and weekly on a schedule so advisories against
+# upstream CodeQL rules catch us even when the repo is idle.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Monday 07:00 UTC — before the work week starts.
+    - cron: "0 7 * * 1"
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: javascript-typescript
+            build-mode: none
+          - language: python
+            build-mode: none
+          # CodeQL supports Rust via the `rust` language identifier in its
+          # beta channel. We build the native addon manually so CodeQL can
+          # observe the compilation.
+          - language: rust
+            build-mode: manual
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        if: matrix.language == 'rust'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # Use the extended security + quality rule set for stricter
+          # coverage than the default. This surfaces dead-code smells and
+          # style issues in addition to security findings.
+          queries: security-and-quality
+
+      - name: Manual build (Rust)
+        if: matrix.language == 'rust'
+        run: cargo build --manifest-path crates/kensa-engine/Cargo.toml
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

@@ -28,6 +28,7 @@ type BackendCommand =
   | { cmd: 'get_all_insights' }
   | { cmd: 'apply_code'; code: string; step_id: string }
   | { cmd: 'preview_code'; code: string }
+  | { cmd: 'get_preview_slice'; start: number; end: number }
   | { cmd: 'undo'; step_id: string }
   | { cmd: 'export_csv'; path: string }
   | { cmd: 'export_parquet'; path: string }
@@ -38,6 +39,19 @@ type BackendCommand =
     }
   | { cmd: 'set_view_filters'; filters: Array<{ column: string; op: string; value?: string }> }
   | { cmd: 'set_view_sort'; sort: { column: string; ascending: boolean } | null };
+
+/** A preview slice chunk returned by Python. Mirrors DataSlice but adds a
+ *  per-cell `changedMask` the grid uses to paint diff highlights for only
+ *  the cells currently visible. */
+export interface PreviewSlice extends DataSlice {
+  changedMask: boolean[][];
+}
+
+/** Full-df preview response: the first page + the full-dataset diff
+ *  summary (row/col counts) that the banner shows. */
+export interface PreviewResponse extends PreviewSlice {
+  diff: DiffSummary;
+}
 
 export class PythonBackend {
   private proc: ChildProcess | null = null;
@@ -216,8 +230,18 @@ export class PythonBackend {
     return slice;
   }
 
-  async previewCode(code: string): Promise<DataSlice> {
-    return (await this.request({ cmd: 'preview_code', code })) as DataSlice;
+  async previewCode(code: string): Promise<PreviewResponse> {
+    return (await this.request({ cmd: 'preview_code', code })) as PreviewResponse;
+  }
+
+  /** Fetch a further page of the currently-active preview, reusing the
+   *  preview_df Python already stashed so the operation doesn't re-run. */
+  async getPreviewSlice(start: number, end: number): Promise<PreviewSlice> {
+    return (await this.request({
+      cmd: 'get_preview_slice',
+      start,
+      end
+    })) as PreviewSlice;
   }
 
   async undo(stepId: string): Promise<DataSlice> {

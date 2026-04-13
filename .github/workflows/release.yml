@@ -1,0 +1,286 @@
+name: release
+
+# Release pipeline for Kensa.
+#
+# How to cut a release:
+#   1. Bump the version in `package.json` and `crates/kensa-engine/Cargo.toml`.
+#   2. Update `CHANGELOG.md` with the new section.
+#   3. Commit, push to `main`, wait for the regular `build` CI to pass.
+#   4. Tag the commit: `git tag v0.1.0 && git push origin v0.1.0`.
+#
+# The tag push triggers this workflow, which:
+#   - builds the Rust native engine (release profile) for all 6 target triples
+#   - builds the TypeScript extension + React webview in production mode
+#   - packages a platform-specific VSIX per target via `@vscode/vsce`
+#   - creates a GitHub Release named after the tag
+#   - attaches every VSIX as a release asset, plus SHA-256 checksums
+#   - publishes each VSIX to the VS Code Marketplace (if `VSCE_PAT` is set)
+#   - publishes each VSIX to the Open VSX Registry (if `OVSX_PAT` is set)
+#
+# Required repository secrets for marketplace publishing (both optional —
+# steps no-op with a warning when the matching secret is missing):
+#
+#   VSCE_PAT  — Azure DevOps Personal Access Token with the Marketplace →
+#               Manage scope, for the publisher account that owns this
+#               extension. See https://code.visualstudio.com/api/working-with-extensions/publishing-extension#get-a-personal-access-token
+#   OVSX_PAT  — Open VSX Registry token from https://open-vsx.org/ user
+#               profile → Tokens → Create. Independent of VSCE_PAT.
+#
+# The workflow can also be fired manually from the Actions tab via
+# `workflow_dispatch` — useful for re-running a failed release without
+# needing to delete and re-push the tag. Pre-release tags (containing a
+# hyphen, e.g. `v0.1.0-rc.1`) are created as GitHub pre-releases but are
+# intentionally skipped for marketplace publishing.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag name to release (e.g. v0.1.0). Must already point at a commit."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.vscode_target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            vscode_target: linux-x64
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            vscode_target: linux-arm64
+          - host: macos-latest
+            target: x86_64-apple-darwin
+            vscode_target: darwin-x64
+          - host: macos-latest
+            target: aarch64-apple-darwin
+            vscode_target: darwin-arm64
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            vscode_target: win32-x64
+          - host: windows-latest
+            target: aarch64-pc-windows-msvc
+            vscode_target: win32-arm64
+    runs-on: ${{ matrix.host }}
+
+    steps:
+      - name: Checkout at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux cross-compile deps
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Install npm deps
+        run: npm ci || npm install
+
+      - name: Build Rust native module (release)
+        run: >
+          npx napi build --platform --release
+          --target ${{ matrix.target }}
+          --cargo-cwd crates/kensa-engine
+          --js index.js --dts index.d.ts
+          crates/kensa-engine
+
+      - name: Build extension + webview (production)
+        run: npm run build:ts:prod
+
+      - name: Package VSIX
+        run: >
+          npx vsce package
+          --target ${{ matrix.vscode_target }}
+          --out "kensa-${{ matrix.vscode_target }}.vsix"
+
+      - name: Compute SHA-256
+        shell: bash
+        run: |
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 "kensa-${{ matrix.vscode_target }}.vsix" > "kensa-${{ matrix.vscode_target }}.vsix.sha256"
+          else
+            sha256sum "kensa-${{ matrix.vscode_target }}.vsix" > "kensa-${{ matrix.vscode_target }}.vsix.sha256"
+          fi
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kensa-${{ matrix.vscode_target }}
+          path: |
+            kensa-${{ matrix.vscode_target }}.vsix
+            kensa-${{ matrix.vscode_target }}.vsix.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Download all VSIX artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List collected assets
+        run: ls -la release-assets
+
+      - name: Extract changelog entry for this tag
+        id: changelog
+        shell: bash
+        run: |
+          # Pull just the section for this version out of CHANGELOG.md, so
+          # the release body tracks the committed changelog 1:1.
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          if [ ! -f CHANGELOG.md ]; then
+            echo "body<<EOF" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          awk -v v="$VERSION" '
+            BEGIN { found=0 }
+            /^## \[/ {
+              if (found) exit
+              if (index($0, "[" v "]")) { found=1; next }
+            }
+            found { print }
+          ' CHANGELOG.md > release-body.md
+          if [ ! -s release-body.md ]; then
+            echo "Release $TAG" > release-body.md
+          fi
+          {
+            echo "body<<EOF"
+            cat release-body.md
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          body: ${{ steps.changelog.outputs.body }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            release-assets/*.vsix
+            release-assets/*.vsix.sha256
+          fail_on_unmatched_files: true
+
+  marketplace:
+    name: Publish to marketplaces
+    needs: build
+    runs-on: ubuntu-latest
+    # Skip marketplace publish for pre-releases (tags containing a hyphen,
+    # e.g. v0.1.0-rc.1). Pre-releases are still created as GitHub releases
+    # above, but they don't ship to the public marketplace catalog.
+    if: ${{ !contains(github.ref_name, '-') }}
+    steps:
+      - name: Checkout at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install publish tools
+        run: npm install -g @vscode/vsce ovsx
+
+      - name: Download all VSIX artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List collected assets
+        run: ls -la release-assets
+
+      # VS Code Marketplace publish. We publish each platform-specific VSIX
+      # under the same version string — the marketplace will serve the right
+      # one based on the user's OS/arch automatically. `vsce publish
+      # --packagePath` uploads an already-built VSIX without rebuilding.
+      #
+      # If VSCE_PAT is not configured, we emit a GitHub annotation and exit
+      # with success so the marketplace step is effectively opt-in.
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        shell: bash
+        run: |
+          if [ -z "${VSCE_PAT:-}" ]; then
+            echo "::warning title=VS Code Marketplace skipped::VSCE_PAT secret is not set. Add it under Settings → Secrets → Actions to publish to the VS Code Marketplace."
+            exit 0
+          fi
+          shopt -s nullglob
+          count=0
+          for vsix in release-assets/*.vsix; do
+            echo "::group::vsce publish $(basename "$vsix")"
+            vsce publish --packagePath "$vsix" --pat "$VSCE_PAT"
+            echo "::endgroup::"
+            count=$((count + 1))
+          done
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No VSIX files found in release-assets/"
+            exit 1
+          fi
+          echo "Published $count VSIX file(s) to VS Code Marketplace."
+
+      # Open VSX Registry publish — the open-source mirror used by VSCodium,
+      # Gitpod, Cursor, code-server, etc. Independent token, independent
+      # opt-in. Same file selection logic as the vsce step above.
+      - name: Publish to Open VSX Registry
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        shell: bash
+        run: |
+          if [ -z "${OVSX_PAT:-}" ]; then
+            echo "::warning title=Open VSX skipped::OVSX_PAT secret is not set. Add it under Settings → Secrets → Actions to publish to Open VSX."
+            exit 0
+          fi
+          shopt -s nullglob
+          count=0
+          for vsix in release-assets/*.vsix; do
+            echo "::group::ovsx publish $(basename "$vsix")"
+            ovsx publish "$vsix" --pat "$OVSX_PAT"
+            echo "::endgroup::"
+            count=$((count + 1))
+          done
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No VSIX files found in release-assets/"
+            exit 1
+          fi
+          echo "Published $count VSIX file(s) to Open VSX."

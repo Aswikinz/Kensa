@@ -15,9 +15,14 @@
 // scrolling. Only the visible window of rows is rendered; everything else is
 // a cheap absolute-positioned layer.
 //
-// Diff overlay: when a preview is active, the store exposes `previewSlice`
-// and `previewDiff`, which we render in place of the real slice. Cells that
-// changed get `.diff-modified`; newly-added columns get `.diff-added`.
+// Preview mode: when a preview is active, the store holds `previewSlice`
+// (paginated — the full preview_df stays on the Python side) plus
+// `previewChangedMask`, a rectangular boolean array for the currently-
+// loaded window. Scrolling past the loaded window sends a
+// `requestPreviewSlice` message and the extension serves the next page
+// from the stashed preview_df — the operation is NOT re-executed.
+// Cell highlights come from the mask, not from a JS-side diff, so they
+// remain accurate for every paginated chunk.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { ColumnHeader } from './ColumnHeader';
@@ -55,6 +60,7 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
   // `slice` so the preview reuses the same layout code paths.
   const previewSlice = useKensaStore((s) => s.previewSlice);
   const previewDiff = useKensaStore((s) => s.previewDiff);
+  const previewChangedMask = useKensaStore((s) => s.previewChangedMask);
   const appliedDiff = useKensaStore((s) => s.diff);
   const slice = previewSlice ?? baseSlice;
   const diff: DiffSummary | null = previewSlice ? previewDiff : appliedDiff;
@@ -77,9 +83,16 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
     return m;
   }, [slice.columns]);
 
+  // The applied-diff (post-Apply) path still uses `modifiedCells` — that
+  // comes from the extension-side cell compare in webviewProvider.
+  // The PREVIEW path uses `previewChangedMask` instead: a rectangular
+  // boolean array indexed by (localRowIndex, colIndex) where
+  // localRowIndex is `rowIdx - slice.startRow`. Computed once on the
+  // Python side per window and shipped alongside the slice, so it
+  // remains accurate even when the user paginates past the first page.
   const modifiedSet = useMemo(
-    () => buildModifiedSet(diff?.modifiedCells, columnIndexByName),
-    [diff?.modifiedCells, columnIndexByName]
+    () => (previewSlice ? new Set<string>() : buildModifiedSet(diff?.modifiedCells, columnIndexByName)),
+    [previewSlice, diff?.modifiedCells, columnIndexByName]
   );
 
   const addedColumns = useMemo(
@@ -123,24 +136,30 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
     Math.ceil((rowsScrollOffset + visibleRowAreaHeight) / ROW_HEIGHT) + OVERSCAN
   );
 
-  // Request a new slice if the user scrolled past the loaded window. We use
-  // the base slice's loaded window because the preview slice is a fixed
-  // snapshot that shouldn't trigger pagination.
-  const loadedStart = previewSlice ? null : baseSlice.startRow;
-  const loadedEnd = previewSlice ? null : baseSlice.startRow + baseSlice.rows.length;
+  // Pagination. Both the base slice (normal browsing) and the preview
+  // slice (what-if overlay) paginate — if the user scrolls past the loaded
+  // window we ask the extension for another page. The message type
+  // differs: `requestDataSlice` for base, `requestPreviewSlice` for
+  // preview. Python serves preview pages from the stashed preview_df
+  // without re-running the operation.
+  const activeLoadedStart = slice.startRow;
+  const activeLoadedEnd = slice.startRow + slice.rows.length;
   useEffect(() => {
-    if (previewSlice) return;
-    if (loadedStart === null || loadedEnd === null) return;
-    const needsMore = firstVisibleRow < loadedStart || lastVisibleRow > loadedEnd;
+    const needsMore =
+      firstVisibleRow < activeLoadedStart || lastVisibleRow > activeLoadedEnd;
     if (!needsMore) return;
     const start = Math.max(0, firstVisibleRow);
     const end = Math.min(slice.totalRows, start + PAGE_SIZE);
-    postMessage({ type: 'requestDataSlice', start, end });
+    if (previewSlice) {
+      postMessage({ type: 'requestPreviewSlice', start, end });
+    } else {
+      postMessage({ type: 'requestDataSlice', start, end });
+    }
   }, [
     firstVisibleRow,
     lastVisibleRow,
-    loadedStart,
-    loadedEnd,
+    activeLoadedStart,
+    activeLoadedEnd,
     slice.totalRows,
     previewSlice
   ]);
@@ -189,7 +208,13 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
               const isMissing = value === null || value === undefined;
               const isSelected =
                 selectedCell && selectedCell.row === rowIdx && selectedCell.col === colIdx;
-              const isModified = modifiedSet.has(`${rowIdx}:${colIdx}`);
+              // In preview mode, consult the per-window mask; outside
+              // preview mode, fall back to the applied-diff set. Both
+              // paths are O(1) per cell.
+              const maskRow = previewSlice ? previewChangedMask[localIdx] : undefined;
+              const isModified = previewSlice
+                ? maskRow?.[colIdx] === true
+                : modifiedSet.has(`${rowIdx}:${colIdx}`);
               const isAdded = addedColumns.has(col.name);
               const classes = ['kensa-cell'];
               if (isMissing) classes.push('kensa-cell-missing');
@@ -228,8 +253,9 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
     <div className="kensa-grid">
       {previewSlice && (
         <div className="kensa-preview-banner">
-          Previewing changes · {diff?.rowsChanged ?? 0} cells modified,{' '}
-          {diff?.rowsAdded ?? 0} rows added, {diff?.rowsRemoved ?? 0} removed
+          <strong>Previewing changes</strong>
+          {' · '}
+          {summarizeDiff(diff)}
         </div>
       )}
       <div
@@ -278,4 +304,34 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
       </div>
     </div>
   );
+}
+
+/** Build a human-readable summary of a DiffSummary for the preview banner.
+ *  Prioritizes the most structurally relevant change: columns added, then
+ *  rows added/removed, then modified cell count. When the operation keeps
+ *  row count constant we highlight individual cells in yellow; when row
+ *  count changes we report the delta in the banner instead (the grid's
+ *  cell colors would be misleading). */
+function summarizeDiff(diff: DiffSummary | null): string {
+  if (!diff) return 'waiting for backend...';
+  const parts: string[] = [];
+  if (diff.columnsAdded.length > 0) {
+    parts.push(
+      `${diff.columnsAdded.length} column${diff.columnsAdded.length === 1 ? '' : 's'} added (${diff.columnsAdded.join(', ')})`
+    );
+  }
+  if (diff.columnsRemoved.length > 0) {
+    parts.push(
+      `${diff.columnsRemoved.length} column${diff.columnsRemoved.length === 1 ? '' : 's'} removed`
+    );
+  }
+  if (diff.rowsAdded > 0) parts.push(`+${diff.rowsAdded} rows`);
+  if (diff.rowsRemoved > 0) parts.push(`−${diff.rowsRemoved} rows`);
+  if (diff.rowsChanged > 0) {
+    parts.push(
+      `${diff.rowsChanged} cell${diff.rowsChanged === 1 ? '' : 's'} modified`
+    );
+  }
+  if (parts.length === 0) return 'no structural change';
+  return parts.join(' · ');
 }

@@ -60,7 +60,6 @@ function initialValues(operation: OperationSpec): Record<string, unknown> {
   for (const p of operation.parameters) {
     if (p.defaultValue !== undefined) out[p.key] = p.defaultValue;
     else if (p.kind === 'columnMulti') out[p.key] = [];
-    else if (p.kind === 'examples') out[p.key] = [{ input: '', output: '' }];
   }
   return out;
 }
@@ -164,50 +163,6 @@ function renderField(
           rows={4}
         />
       );
-    case 'examples': {
-      const pairs = (Array.isArray(value) ? value : [{ input: '', output: '' }]) as Array<{
-        input: string;
-        output: string;
-      }>;
-      return (
-        <div className="kensa-examples">
-          {pairs.map((pair, i) => (
-            <div key={i} className="kensa-example-row">
-              <input
-                type="text"
-                className="kensa-input"
-                placeholder="input"
-                value={pair.input}
-                onChange={(e) => {
-                  const next = [...pairs];
-                  next[i] = { ...pair, input: e.target.value };
-                  onChange(next);
-                }}
-              />
-              <span className="kensa-arrow">→</span>
-              <input
-                type="text"
-                className="kensa-input"
-                placeholder="output"
-                value={pair.output}
-                onChange={(e) => {
-                  const next = [...pairs];
-                  next[i] = { ...pair, output: e.target.value };
-                  onChange(next);
-                }}
-              />
-            </div>
-          ))}
-          <button
-            type="button"
-            className="kensa-linky"
-            onClick={() => onChange([...pairs, { input: '', output: '' }])}
-          >
-            + Add example
-          </button>
-        </div>
-      );
-    }
     default:
       return null;
   }

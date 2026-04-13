@@ -9,8 +9,7 @@ export type ParameterKind =
   | 'number'
   | 'enum'
   | 'boolean'
-  | 'code'
-  | 'examples';
+  | 'code';
 
 export interface ParameterSchema {
   readonly key: string;
@@ -49,8 +48,7 @@ export type OperationCategory =
   | 'Encoding'
   | 'Numeric'
   | 'Aggregation'
-  | 'Custom'
-  | 'DateTime';
+  | 'Custom';
 
 export interface OperationSpec {
   readonly id: string;
@@ -66,6 +64,29 @@ const colNames = (v: unknown): string => {
   const arr = Array.isArray(v) ? v : [v];
   return '[' + arr.map((s) => JSON.stringify(String(s))).join(', ') + ']';
 };
+
+/** Format a user-entered value as a Python literal. If the string parses as
+ *  a finite number, emit it as a numeric literal — otherwise as a JSON
+ *  string. This makes the filter/fill forms DWIM: typing `5` in a numeric
+ *  column generates `== 5`, typing `"NY"` in a string column generates
+ *  `== "NY"`. Without this, filter/fill on numeric columns silently
+ *  produced type-mismatched comparisons that returned empty results. */
+function pyLiteral(raw: unknown): string {
+  const s = String(raw ?? '');
+  if (s === '') return '""';
+  // Booleans first so "true"/"false" don't get stringified.
+  if (s === 'true' || s === 'True') return 'True';
+  if (s === 'false' || s === 'False') return 'False';
+  if (s === 'None' || s === 'null') return 'None';
+  // Number detection: strict — reject "1.2.3", "1e", NaN, Infinity, etc.
+  // and anything with leading/trailing whitespace (which is probably a
+  // typo rather than an intentional literal).
+  if (/^-?\d+$/.test(s)) return s;
+  if (/^-?\d*\.\d+$/.test(s)) return s;
+  if (/^-?\d+\.\d*$/.test(s)) return s;
+  if (/^-?\d+(?:\.\d+)?[eE][+-]?\d+$/.test(s)) return s;
+  return JSON.stringify(s);
+}
 
 export const OPERATIONS: readonly OperationSpec[] = [
   {
@@ -131,7 +152,11 @@ export const OPERATIONS: readonly OperationSpec[] = [
     ],
     generate: (p) => {
       const col = colName(p.column);
-      const v = JSON.stringify(String(p.value ?? ''));
+      // DWIM literal: "5" → 5, "NY" → "NY". See `pyLiteral` for the rules.
+      const v = pyLiteral(p.value);
+      // `str.contains` / startswith / endswith always want the needle as a
+      // string, not a numeric literal, so we re-stringify for those branches.
+      const vStr = JSON.stringify(String(p.value ?? ''));
       switch (p.condition) {
         case 'not_equals':
           return `df = df[df[${col}] != ${v}]`;
@@ -140,11 +165,11 @@ export const OPERATIONS: readonly OperationSpec[] = [
         case 'less_than':
           return `df = df[df[${col}] < ${v}]`;
         case 'contains':
-          return `df = df[df[${col}].astype(str).str.contains(${v}, na=False)]`;
+          return `df = df[df[${col}].astype(str).str.contains(${vStr}, na=False)]`;
         case 'starts_with':
-          return `df = df[df[${col}].astype(str).str.startswith(${v}, na=False)]`;
+          return `df = df[df[${col}].astype(str).str.startswith(${vStr}, na=False)]`;
         case 'ends_with':
-          return `df = df[df[${col}].astype(str).str.endswith(${v}, na=False)]`;
+          return `df = df[df[${col}].astype(str).str.endswith(${vStr}, na=False)]`;
         case 'is_missing':
           return `df = df[df[${col}].isna()]`;
         case 'is_not_missing':
@@ -341,7 +366,10 @@ export const OPERATIONS: readonly OperationSpec[] = [
           return `df[${col}] = df[${col}].bfill()`;
         case 'value':
         default:
-          return `df[${col}] = df[${col}].fillna(${JSON.stringify(String(p.value ?? ''))})`;
+          // DWIM literal — typing `0` in a numeric column produces the
+          // integer 0 rather than the string "0", so the column dtype
+          // isn't silently demoted to object.
+          return `df[${col}] = df[${col}].fillna(${pyLiteral(p.value)})`;
       }
     }
   },
@@ -397,91 +425,69 @@ export const OPERATIONS: readonly OperationSpec[] = [
   },
   {
     id: 'split_text',
-    label: 'Split text',
+    label: 'Split text into columns',
     category: 'Text Transforms',
-    description: 'Split a text column by a delimiter.',
+    description: 'Split a text column by a delimiter into separate columns.',
     parameters: [
       { key: 'column', label: 'Column', kind: 'column', required: true },
       { key: 'delimiter', label: 'Delimiter', kind: 'string', defaultValue: ',' },
-      { key: 'maxSplits', label: 'Max splits', kind: 'number', defaultValue: -1 }
+      { key: 'maxSplits', label: 'Max splits (-1 = all)', kind: 'number', defaultValue: -1 }
     ],
     generate: (p) => {
       const col = colName(p.column);
+      const src = String(p.column);
       const d = JSON.stringify(String(p.delimiter ?? ','));
       const n = Number(p.maxSplits ?? -1);
-      return `df[${col}] = df[${col}].astype(str).str.split(${d}, n=${n})`;
+      // Split into a DataFrame of parts, prefix the new column names with
+      // the source column's name, then concat back onto df. The original
+      // column stays in place — users who want to drop it can use Drop
+      // Column as a follow-up step.
+      return (
+        `_parts = df[${col}].astype(str).str.split(${d}, n=${n}, expand=True)\n` +
+        `_parts.columns = [f"${src}_{i + 1}" for i in range(len(_parts.columns))]\n` +
+        `df = pd.concat([df, _parts], axis=1)`
+      );
     }
   },
   {
     id: 'capitalize',
     label: 'Capitalize',
     category: 'Text Transforms',
-    description: 'Capitalize the first character of each value.',
+    description: 'Capitalize the first character of each value (rest lowercased). Leading/trailing whitespace is stripped first so real-world messy data works as expected.',
     parameters: [{ key: 'column', label: 'Column', kind: 'column', required: true }],
-    generate: (p) => `df[${colName(p.column)}] = df[${colName(p.column)}].astype(str).str.capitalize()`
+    // `.str.capitalize()` is a no-op when the first character isn't a
+    // letter (space, quote, digit, etc.) because Python's str.capitalize
+    // only uppercases position 0. Stripping whitespace first makes the
+    // operation behave like users expect — "  alice smith" → "Alice smith".
+    generate: (p) =>
+      `df[${colName(p.column)}] = df[${colName(p.column)}].astype(str).str.strip().str.capitalize()`
   },
   {
     id: 'lowercase',
     label: 'Lowercase',
     category: 'Text Transforms',
-    description: 'Convert text to lowercase.',
+    description: 'Convert text to lowercase. Leading/trailing whitespace is stripped so the result is consistent.',
     parameters: [{ key: 'column', label: 'Column', kind: 'column', required: true }],
-    generate: (p) => `df[${colName(p.column)}] = df[${colName(p.column)}].astype(str).str.lower()`
+    generate: (p) =>
+      `df[${colName(p.column)}] = df[${colName(p.column)}].astype(str).str.strip().str.lower()`
   },
   {
     id: 'uppercase',
     label: 'Uppercase',
     category: 'Text Transforms',
-    description: 'Convert text to uppercase.',
+    description: 'Convert text to uppercase. Leading/trailing whitespace is stripped so the result is consistent.',
     parameters: [{ key: 'column', label: 'Column', kind: 'column', required: true }],
-    generate: (p) => `df[${colName(p.column)}] = df[${colName(p.column)}].astype(str).str.upper()`
+    generate: (p) =>
+      `df[${colName(p.column)}] = df[${colName(p.column)}].astype(str).str.strip().str.upper()`
   },
   {
-    id: 'flashfill_string',
-    label: 'String transform by example',
+    id: 'title_case',
+    label: 'Title case',
     category: 'Text Transforms',
-    description: 'Transform a column using input/output examples (FlashFill).',
-    parameters: [
-      { key: 'column', label: 'Source column', kind: 'column', required: true },
-      { key: 'examples', label: 'Examples', kind: 'examples', required: true }
-    ],
-    generate: (p) => {
-      const col = colName(p.column);
-      const expr = String(p.inferredExpression ?? 's');
-      return `s = df[${col}]\ndf[${col}] = ${expr}`;
-    }
-  },
-  {
-    id: 'flashfill_datetime',
-    label: 'DateTime formatting by example',
-    category: 'DateTime',
-    description: 'Reformat a datetime column by showing example outputs.',
-    parameters: [
-      { key: 'column', label: 'Source column', kind: 'column', required: true },
-      { key: 'format', label: 'strftime pattern', kind: 'string', defaultValue: '%Y-%m-%d' }
-    ],
-    generate: (p) => {
-      const col = colName(p.column);
-      const fmt = JSON.stringify(String(p.format ?? '%Y-%m-%d'));
-      return `df[${col}] = pd.to_datetime(df[${col}], errors='coerce').dt.strftime(${fmt})`;
-    }
-  },
-  {
-    id: 'new_column_by_example',
-    label: 'New column by example',
-    category: 'Custom',
-    description: 'Derive a new column from examples of its contents.',
-    parameters: [
-      { key: 'name', label: 'New column name', kind: 'string', required: true },
-      { key: 'sourceColumn', label: 'Source column', kind: 'column', required: true },
-      { key: 'examples', label: 'Examples', kind: 'examples', required: true }
-    ],
-    generate: (p) => {
-      const newCol = colName(p.name);
-      const src = colName(p.sourceColumn);
-      const expr = String(p.inferredExpression ?? 's');
-      return `s = df[${src}]\ndf[${newCol}] = ${expr}`;
-    }
+    description: 'Title-case every word ("alice smith" → "Alice Smith"). Leading/trailing whitespace is stripped first.',
+    parameters: [{ key: 'column', label: 'Column', kind: 'column', required: true }],
+    generate: (p) =>
+      `df[${colName(p.column)}] = df[${colName(p.column)}].astype(str).str.strip().str.title()`
   },
   {
     id: 'scale_min_max',

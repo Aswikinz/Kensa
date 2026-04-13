@@ -415,23 +415,182 @@ def apply_code(code: str, step_id: str) -> Dict[str, Any]:
 
 
 def preview_code(code: str) -> Dict[str, Any]:
-    df = exec_step(current_df().copy(), code)
+    """Execute the operation against a copy of working_df and stash the
+    result as `STATE.preview_df`. Returns the first page plus a full-diff
+    summary (computed once over the entire preview df) plus a per-cell
+    boolean mask for the first page so the grid can highlight only the
+    cells that actually changed, not every cell in a shifted row.
+
+    The full diff count is the authoritative "N cells modified" number
+    shown in the toolbar banner — it reflects the ENTIRE dataset, not
+    just the visible window. The per-window mask is only used to paint
+    individual highlights on the rows currently being rendered.
+
+    Subsequent preview pages are served by `get_preview_slice` below,
+    which reuses the same stored preview_df so we don't re-run the
+    operation for every scroll."""
+    base_df = current_df()
+    df = exec_step(base_df.copy(), code)
     STATE.preview_df = df
+    first_page = _preview_page(base_df, df, 0, min(500, len(df)))
+    full_diff = _compute_full_preview_diff(base_df, df)
     return {
-        "rows": [[_cell_to_json(v) for v in row.tolist()] for _, row in df.head(500).iterrows()],
-        "startRow": 0,
-        "endRow": min(500, len(df)),
-        "totalRows": int(len(df)),
-        "columns": [
-            {
-                "index": i,
-                "name": str(c),
-                "dtype": str(df.dtypes[c]),
-                "inferred": friendly_dtype(str(df.dtypes[c])),
-            }
-            for i, c in enumerate(df.columns)
-        ],
+        **first_page,
+        "diff": full_diff,
+    }
+
+
+def get_preview_slice(start: int, end: int) -> Dict[str, Any]:
+    """Serve a page of the stored preview_df. Called when the user scrolls
+    past the first page in preview mode. Returns the same shape as
+    `preview_code` minus the full diff (which doesn't change between pages)."""
+    if STATE.preview_df is None:
+        raise RuntimeError("no preview is active")
+    return _preview_page(current_df(), STATE.preview_df, int(start), int(end))
+
+
+def _preview_page(
+    base_df: "pd.DataFrame",
+    prev_df: "pd.DataFrame",
+    start: int,
+    end: int,
+) -> Dict[str, Any]:
+    """Build one preview-page response — rows + per-cell changed mask + the
+    standard slice envelope. The per-window mask is a rectangular list of
+    booleans matching the rendered rows/columns so the grid can flip the
+    `.diff-modified` class on exactly the cells that changed, not on
+    positionally-shifted rows that merely coincide with the render window."""
+    total = len(prev_df)
+    start = max(0, min(start, total))
+    end = max(start, min(end, total))
+    window = prev_df.iloc[start:end]
+
+    rows: List[List[Optional[str]]] = [
+        [_cell_to_json(v) for v in row.tolist()] for _, row in window.iterrows()
+    ]
+    mask = _compute_window_mask(base_df, prev_df, start, end)
+    columns = [
+        {
+            "index": i,
+            "name": str(c),
+            "dtype": str(prev_df.dtypes[c]),
+            "inferred": friendly_dtype(str(prev_df.dtypes[c])),
+        }
+        for i, c in enumerate(prev_df.columns)
+    ]
+    return {
+        "rows": rows,
+        "changedMask": mask,
+        "startRow": int(start),
+        "endRow": int(end),
+        "totalRows": int(total),
+        "columns": columns,
         "engine": "python",
+    }
+
+
+def _compute_window_mask(
+    base_df: "pd.DataFrame",
+    prev_df: "pd.DataFrame",
+    start: int,
+    end: int,
+) -> List[List[bool]]:
+    """Per-cell changed flag for the [start, end) window of prev_df against
+    base_df. Only meaningful when both dataframes have the same length AND
+    the same row order — otherwise we return an empty mask and the webview
+    falls back to rendering without cell highlights (the banner already
+    reports the structural change). The NaN sentinel trick avoids
+    `NaN != NaN` tripping every row on numeric columns."""
+    if pd is None or np is None or base_df is None or prev_df is None:
+        return []
+    if len(base_df) != len(prev_df):
+        return []
+    try:
+        if not base_df.index.equals(prev_df.index):
+            return []
+    except Exception:  # noqa: BLE001
+        return []
+    n = end - start
+    if n <= 0:
+        return []
+    base_window = base_df.iloc[start:end]
+    prev_window = prev_df.iloc[start:end]
+    cols = list(prev_df.columns)
+    mask_arr = np.zeros((n, len(cols)), dtype=bool)
+    for c_idx, col in enumerate(cols):
+        if col in base_df.columns:
+            try:
+                a = base_window[col].astype(object).where(
+                    base_window[col].notna(), "__KENSA_NA__"
+                )
+                b = prev_window[col].astype(object).where(
+                    prev_window[col].notna(), "__KENSA_NA__"
+                )
+                mask_arr[:, c_idx] = a.values != b.values
+            except Exception:  # noqa: BLE001
+                mask_arr[:, c_idx] = False
+        else:
+            # Columns that didn't exist in the base are always "added" —
+            # highlighted wholesale by the grid via `columnsAdded`, not per
+            # cell, so we leave the mask False here.
+            mask_arr[:, c_idx] = False
+    return mask_arr.tolist()
+
+
+def _compute_full_preview_diff(
+    base_df: "pd.DataFrame",
+    prev_df: "pd.DataFrame",
+) -> Dict[str, Any]:
+    """One-shot diff summary between the whole working_df and the whole
+    preview_df. Vectorized over columns; for a 200k × N frame this is a
+    handful of `Series != Series` calls that pandas runs in tens of ms.
+
+    The `modifiedCells` list is intentionally NOT populated here — on a
+    200k-row frame that list would be a million entries in the worst case
+    and we don't need it: the webview paints individual highlights from
+    the per-window mask returned alongside each preview page, and this
+    summary is only used for the `Previewing changes · N cells modified`
+    banner."""
+    if pd is None or base_df is None or prev_df is None:
+        return {
+            "rowsAdded": 0,
+            "rowsRemoved": 0,
+            "rowsChanged": 0,
+            "columnsAdded": [],
+            "columnsRemoved": [],
+            "modifiedCells": [],
+        }
+
+    base_cols = list(base_df.columns)
+    prev_cols = list(prev_df.columns)
+    columns_added = [str(c) for c in prev_cols if c not in base_cols]
+    columns_removed = [str(c) for c in base_cols if c not in prev_cols]
+    rows_added = max(0, len(prev_df) - len(base_df))
+    rows_removed = max(0, len(base_df) - len(prev_df))
+
+    rows_changed = 0
+    if (
+        len(base_df) == len(prev_df)
+        and len(base_df) > 0
+        and base_df.index.equals(prev_df.index)
+    ):
+        for col in prev_cols:
+            if col not in base_cols:
+                continue
+            try:
+                a = base_df[col].astype(object).where(base_df[col].notna(), "__KENSA_NA__")
+                b = prev_df[col].astype(object).where(prev_df[col].notna(), "__KENSA_NA__")
+                rows_changed += int((a.values != b.values).sum())
+            except Exception:  # noqa: BLE001
+                continue
+
+    return {
+        "rowsAdded": int(rows_added),
+        "rowsRemoved": int(rows_removed),
+        "rowsChanged": int(rows_changed),
+        "columnsAdded": columns_added,
+        "columnsRemoved": columns_removed,
+        "modifiedCells": [],
     }
 
 
@@ -485,6 +644,7 @@ DISPATCH: Dict[str, Any] = {
     "get_all_insights": lambda msg: get_all_insights(),
     "apply_code": lambda msg: apply_code(msg["code"], msg["step_id"]),
     "preview_code": lambda msg: preview_code(msg["code"]),
+    "get_preview_slice": lambda msg: get_preview_slice(int(msg["start"]), int(msg["end"])),
     "undo": lambda msg: undo_step(msg["step_id"]),
     "export_csv": lambda msg: export_csv(msg["path"]),
     "export_parquet": lambda msg: export_parquet(msg["path"]),

@@ -296,12 +296,30 @@ export class WebviewProvider implements vscode.Disposable {
               ready: true
             });
           }
-          const { code, slice } = await router.previewOperation(
+          const { code, slice, changedMask, diff } = await router.previewOperation(
             msg.operationId,
             msg.parameters
           );
-          const diff = slice ? computeDiff(entry.lastSlice, slice) : null;
-          this.post(entry, { type: 'operationPreview', code, slice, diff });
+          this.post(entry, {
+            type: 'operationPreview',
+            code,
+            slice,
+            changedMask,
+            diff
+          });
+          break;
+        }
+
+        case 'requestPreviewSlice': {
+          // Called by the grid when the user scrolls past the first preview
+          // page. We serve from the stashed preview_df — operation is NOT
+          // re-executed — and return both the rows and the per-cell mask
+          // for the requested window so highlights remain accurate.
+          const { slice, changedMask } = await router.getPreviewSlice(
+            msg.start,
+            msg.end
+          );
+          this.post(entry, { type: 'previewSlice', slice, changedMask });
           break;
         }
 
@@ -337,6 +355,25 @@ export class WebviewProvider implements vscode.Disposable {
           const slice = await router.getSlice(0, DEFAULT_PAGE_SIZE);
           entry.lastSlice = slice;
           this.post(entry, { type: 'dataSlice', slice });
+          break;
+        }
+
+        case 'refreshSource': {
+          this.output.appendLine(
+            `[kensa] refresh requested for source=${router.currentSource?.kind ?? 'none'}`
+          );
+          await router.refresh();
+          const slice = await router.getSlice(0, DEFAULT_PAGE_SIZE);
+          entry.lastSlice = slice;
+          this.post(entry, { type: 'dataSlice', slice });
+          // Also refresh the column insights since the data shape may have
+          // changed completely (different rows, different stats).
+          router
+            .getAllInsights()
+            .then((insights) => this.post(entry, { type: 'allColumnInsights', insights }))
+            .catch((err) =>
+              this.output.appendLine(`[kensa] post-refresh insights failed: ${String(err)}`)
+            );
           break;
         }
 
@@ -439,10 +476,20 @@ function newNonce(): string {
   return result;
 }
 
-/** Cell-level diff between two data slices. Only compares the overlapping
- *  row/column window; rows added/removed or columns added/removed are tracked
- *  separately so the webview can render structural changes alongside cell
- *  highlights. */
+/** Diff between two data slices.
+ *
+ * Cell-level highlighting is only emitted when:
+ *   1. Both slices have the same `totalRows` — if the operation added or
+ *      dropped rows, row positions shift and a position-based compare
+ *      would mark every downstream cell as modified. Better to report
+ *      the structural change and keep the cells clean.
+ *   2. The two slices' `startRow` values line up so we're comparing the
+ *      same window into the data. (Preview always uses start=0, so this
+ *      normally holds.)
+ *
+ * When either condition fails we return structural information only
+ * (`columnsAdded`, `columnsRemoved`, `rowsAdded`, `rowsRemoved`) and let
+ * the webview render a summary banner instead of per-cell highlights. */
 function computeDiff(
   prev: import('../shared/types').DataSlice | null,
   next: import('../shared/types').DataSlice
@@ -457,23 +504,30 @@ function computeDiff(
   const rowsAdded = Math.max(0, next.totalRows - prev.totalRows);
   const rowsRemoved = Math.max(0, prev.totalRows - next.totalRows);
 
-  const overlapRows = Math.min(prev.rows.length, next.rows.length);
   const modifiedCells: Array<{ row: number; column: string }> = [];
+  const sameShape =
+    prev.totalRows === next.totalRows && prev.startRow === next.startRow;
 
-  for (let r = 0; r < overlapRows; r++) {
-    const prevRow = prev.rows[r];
-    const nextRow = next.rows[r];
-    if (!prevRow || !nextRow) continue;
-    // Walk columns by name so reordering doesn't mark every cell as modified.
-    for (let c = 0; c < nextColumnNames.length; c++) {
-      const name = nextColumnNames[c];
-      if (!name) continue;
-      const prevIdx = prevColumnNames.indexOf(name);
-      if (prevIdx === -1) continue;
-      const prevValue = prevRow[prevIdx];
-      const nextValue = nextRow[c];
-      if ((prevValue ?? null) !== (nextValue ?? null)) {
-        modifiedCells.push({ row: r + next.startRow, column: name });
+  if (sameShape) {
+    const overlapRows = Math.min(prev.rows.length, next.rows.length);
+    for (let r = 0; r < overlapRows; r++) {
+      const prevRow = prev.rows[r];
+      const nextRow = next.rows[r];
+      if (!prevRow || !nextRow) continue;
+      // Walk columns by name so reordering doesn't mark every cell as modified.
+      for (let c = 0; c < nextColumnNames.length; c++) {
+        const name = nextColumnNames[c];
+        if (!name) continue;
+        // Don't highlight cells in newly-added columns — they're already
+        // painted wholesale by the `columnsAdded` styling in the grid.
+        if (columnsAdded.includes(name)) continue;
+        const prevIdx = prevColumnNames.indexOf(name);
+        if (prevIdx === -1) continue;
+        const prevValue = prevRow[prevIdx];
+        const nextValue = nextRow[c];
+        if ((prevValue ?? null) !== (nextValue ?? null)) {
+          modifiedCells.push({ row: r + next.startRow, column: name });
+        }
       }
     }
   }
