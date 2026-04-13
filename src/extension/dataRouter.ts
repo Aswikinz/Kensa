@@ -140,29 +140,33 @@ export class DataRouter {
     if (this.mode === 'viewing' && this.rustEngine) {
       if (sort) this.rustEngine.sort(sort.columnIndex, sort.ascending);
       else this.rustEngine.resetView();
-    } else {
-      // In editing mode a sort is just another step.
-      if (sort) {
-        const name = this.lastSlice?.columns[sort.columnIndex]?.name ?? '';
-        await this.applyOperation('sort', { columns: [name], direction: sort.ascending ? 'ascending' : 'descending' });
-      }
+      return;
     }
+    // Editing mode: set the TRANSIENT view sort on the Python backend. It's
+    // a view-level mask, not a step, so clearing it instantly restores the
+    // unsorted order without touching the step history.
+    const backend = await this.kernelManager.ensureBackend();
+    const columnName =
+      sort && this.lastSlice ? this.lastSlice.columns[sort.columnIndex]?.name ?? '' : '';
+    await backend.setViewSort(sort && columnName ? { column: columnName, ascending: sort.ascending } : null);
   }
 
   async applyFilter(filters: FilterSpec[]): Promise<void> {
     if (this.mode === 'viewing' && this.rustEngine) {
       if (filters.length === 0) this.rustEngine.resetView();
       else this.rustEngine.filter(filters);
-    } else {
-      for (const f of filters) {
-        const name = this.lastSlice?.columns[f.columnIndex]?.name ?? '';
-        await this.applyOperation('filter', {
-          column: name,
-          condition: filterOpToCondition(f.op),
-          value: f.value ?? ''
-        });
-      }
+      return;
     }
+    // Editing mode: push the filter list to the Python backend as transient
+    // view filters. These are NOT Pandas steps — they're re-evaluated on
+    // every read. Clearing the list (empty array) restores every hidden row.
+    const backend = await this.kernelManager.ensureBackend();
+    const payload = filters.map((f) => ({
+      column: this.lastSlice?.columns[f.columnIndex]?.name ?? '',
+      op: f.op,
+      value: f.value ?? ''
+    }));
+    await backend.setViewFilters(payload);
   }
 
   /** Run an operation's generated code against a preview copy of the
@@ -306,35 +310,6 @@ export class DataRouter {
     const backend = await this.kernelManager.ensureBackend();
     const slice = await backend.getSlice(start, end);
     return { ...slice, engine: 'python' };
-  }
-}
-
-function filterOpToCondition(op: FilterSpec['op']): string {
-  switch (op) {
-    case 'eq':
-      return 'equals';
-    case 'ne':
-      return 'not_equals';
-    case 'gt':
-      return 'greater_than';
-    case 'lt':
-      return 'less_than';
-    case 'contains':
-      return 'contains';
-    case 'starts_with':
-      return 'starts_with';
-    case 'ends_with':
-      return 'ends_with';
-    case 'is_missing':
-      return 'is_missing';
-    case 'is_not_missing':
-      return 'is_not_missing';
-    case 'is_duplicated':
-      return 'is_duplicated';
-    case 'is_unique':
-      return 'is_unique';
-    default:
-      return 'equals';
   }
 }
 

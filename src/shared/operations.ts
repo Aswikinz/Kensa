@@ -18,9 +18,26 @@ export interface ParameterSchema {
   readonly kind: ParameterKind;
   readonly required?: boolean;
   readonly defaultValue?: unknown;
+  /** Raw option values. Kept as machine-friendly identifiers (e.g. `not_equals`)
+   *  so the generator's switch cases don't drift. Display labels come from
+   *  `optionLabels` or a humanized fallback. */
   readonly options?: readonly string[];
+  /** Optional display labels paired with each option value. If omitted, the
+   *  option value is humanized on render (e.g. `is_not_missing` → "Is not
+   *  missing"). */
+  readonly optionLabels?: Readonly<Record<string, string>>;
   readonly placeholder?: string;
   readonly description?: string;
+}
+
+/** Convert an internal option value like `not_equals` or `is_not_missing`
+ *  into a reader-friendly label for the form. Underscores become spaces and
+ *  the first letter is capitalized. Use `optionLabels` on a parameter to
+ *  override specific entries. */
+export function humanizeOption(value: string): string {
+  const spaced = value.replace(/_/g, ' ').trim();
+  if (!spaced) return value;
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 export type OperationCategory =
@@ -95,6 +112,19 @@ export const OPERATIONS: readonly OperationSpec[] = [
           'is_duplicated',
           'is_unique'
         ],
+        optionLabels: {
+          equals: 'Equals',
+          not_equals: 'Not equals',
+          greater_than: 'Greater than',
+          less_than: 'Less than',
+          contains: 'Contains',
+          starts_with: 'Starts with',
+          ends_with: 'Ends with',
+          is_missing: 'Is missing',
+          is_not_missing: 'Is not missing',
+          is_duplicated: 'Is duplicated',
+          is_unique: 'Is unique'
+        },
         defaultValue: 'equals'
       },
       { key: 'value', label: 'Value', kind: 'string' }

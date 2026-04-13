@@ -94,6 +94,48 @@
   padding: 4px 10px;
 }
 
+/* Filter badge — persistent indicator that the current view is filtered. */
+.kensa-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 10px;
+  border-radius: 12px;
+  background: var(--vscode-statusBarItem-warningBackground, rgba(255, 190, 0, 0.18));
+  color: var(--vscode-statusBarItem-warningForeground, inherit);
+  border: 1px solid var(--vscode-statusBarItem-warningBackground, rgba(255, 190, 0, 0.4));
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: filter 120ms ease;
+}
+
+.kensa-filter-badge:hover {
+  filter: brightness(1.1);
+}
+
+.kensa-filter-badge-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.kensa-filter-badge-label {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.kensa-filter-badge-close {
+  font-size: 14px;
+  line-height: 1;
+  padding-left: 4px;
+  border-left: 1px solid currentColor;
+  opacity: 0.75;
+}
+
+.kensa-filter-badge:hover .kensa-filter-badge-close {
+  opacity: 1;
+}
+
 .kensa-engine-indicator,
 .kensa-row-count {
   color: var(--kensa-muted);
@@ -385,7 +427,63 @@
 .kensa-col-menu-divider {
   height: 1px;
   background: var(--vscode-menu-separatorBackground, var(--kensa-border));
-  margin: 4px 0;
+  margin: 4px 6px;
+}
+
+.kensa-col-menu-section {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--kensa-muted);
+  padding: 4px 14px 2px;
+  font-weight: 600;
+}
+
+.kensa-col-menu-icon {
+  display: inline-block;
+  width: 16px;
+  color: var(--kensa-muted);
+  text-align: center;
+  margin-right: 2px;
+}
+
+.kensa-col-menu-toggle-active {
+  background: var(--vscode-list-activeSelectionBackground, rgba(14, 99, 156, 0.25));
+  color: var(--vscode-list-activeSelectionForeground, inherit);
+}
+
+.kensa-col-menu-toggle-active .kensa-col-menu-icon {
+  color: var(--vscode-charts-green, #89d185);
+  font-weight: 700;
+}
+
+.kensa-col-menu-danger {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.kensa-col-menu-danger:hover,
+.kensa-col-menu-danger:focus-visible {
+  background: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.1)) !important;
+  color: var(--vscode-errorForeground, #f48771) !important;
+}
+
+/* Small dot next to the column name when that column has an active filter. */
+.kensa-col-filter-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: var(--vscode-statusBarItem-warningBackground, #ffbe00);
+  vertical-align: middle;
+}
+
+.kensa-col-header-filtered {
+  background: linear-gradient(
+    to bottom,
+    var(--vscode-statusBarItem-warningBackground, rgba(255, 190, 0, 0.1)) 0%,
+    transparent 6px
+  );
 }
 
 .kensa-col-menu-scrim {

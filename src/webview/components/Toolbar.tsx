@@ -1,12 +1,13 @@
 // Top toolbar.
 //
-// Mode toggle is only shown when the source is a file — notebook variables
-// live in memory and don't have a "viewing" mode without Python. While a
-// switch is in flight we show a spinner and disable both buttons so you
-// can't queue overlapping requests.
+// Left: brand + file name.
+// Center: View / Edit mode toggle (only for file sources).
+// Right: active-filter badge, engine indicator, row count, panel toggles,
+//        export button.
 //
-// The "Reset" button clears any active sort/filter and returns the grid to
-// the raw dataset order.
+// The filter badge shows a count of currently-applied column filters and
+// doubles as a "clear all filters" button. It's hidden when there are no
+// active filters so the chrome stays quiet when nothing is filtered.
 
 import { useKensaStore } from '../state/store';
 import { postMessage } from '../vscodeApi';
@@ -18,13 +19,18 @@ export function Toolbar() {
   const fileName = useKensaStore((s) => s.fileName);
   const source = useKensaStore((s) => s.source);
   const switching = useKensaStore((s) => s.switching);
+  const activeFilters = useKensaStore((s) => s.activeFilters);
+  const activeSort = useKensaStore((s) => s.activeSort);
   const setSwitching = useKensaStore((s) => s.setSwitching);
+  const clearAllFilters = useKensaStore((s) => s.clearAllFilters);
   const toggleSummaryPanel = useKensaStore((s) => s.toggleSummaryPanel);
   const toggleOperationsPanel = useKensaStore((s) => s.toggleOperationsPanel);
   const toggleCodePreview = useKensaStore((s) => s.toggleCodePreview);
 
   const rowCount = slice?.totalRows ?? 0;
   const colCount = slice?.columns.length ?? 0;
+  const filterCount = activeFilters.length;
+  const hasView = filterCount > 0 || activeSort !== null;
 
   const requestMode = (requested: 'viewing' | 'editing') => {
     if (switching || requested === mode) return;
@@ -32,16 +38,13 @@ export function Toolbar() {
     postMessage({ type: 'switchMode', mode: requested });
   };
 
-  const resetView = () => {
-    postMessage({ type: 'applySort', sort: null });
-    postMessage({ type: 'applyFilter', filters: [] });
-  };
-
   return (
     <div className="kensa-toolbar">
       <div className="kensa-toolbar-left">
         <div className="kensa-brand">Kensa</div>
-        <div className="kensa-filename">{fileName}</div>
+        <div className="kensa-filename" title={fileName}>
+          {fileName}
+        </div>
       </div>
 
       <div className="kensa-toolbar-center">
@@ -67,25 +70,32 @@ export function Toolbar() {
             </button>
           </div>
         )}
-        {source === 'variable' && (
-          <div className="kensa-mode-hint" title="Notebook variables are always in Edit mode">
-            Edit (notebook variable)
-          </div>
-        )}
       </div>
 
       <div className="kensa-toolbar-right">
-        <button
-          type="button"
-          className="kensa-btn kensa-btn-ghost"
-          onClick={resetView}
-          title="Clear any applied sort or filter"
-        >
-          Reset filters
-        </button>
+        {hasView && (
+          <button
+            type="button"
+            className="kensa-filter-badge"
+            onClick={clearAllFilters}
+            title={
+              filterCount > 0
+                ? `${filterCount} filter${filterCount === 1 ? '' : 's'} active — click to clear all`
+                : 'Active sort — click to clear'
+            }
+          >
+            <span className="kensa-filter-badge-icon">⧩</span>
+            <span className="kensa-filter-badge-label">
+              {filterCount > 0
+                ? `${filterCount} filter${filterCount === 1 ? '' : 's'}`
+                : 'Sorted'}
+            </span>
+            <span className="kensa-filter-badge-close">×</span>
+          </button>
+        )}
         <div
           className="kensa-engine-indicator"
-          title={engine === 'rust' ? 'Rust engine' : 'Python engine'}
+          title={engine === 'rust' ? 'Rust engine — instant viewing' : 'Python engine — code generation'}
         >
           {engine === 'rust' ? '⚡ Rust' : '🐍 Python'}
         </div>

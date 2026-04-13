@@ -3,7 +3,7 @@
 // params bag to the extension host as an applyOperation message.
 
 import { useState } from 'react';
-import type { OperationSpec, ParameterSchema } from '../../shared/operations';
+import { humanizeOption, type OperationSpec, type ParameterSchema } from '../../shared/operations';
 import { useKensaStore } from '../state/store';
 import { postMessage } from '../vscodeApi';
 
@@ -138,7 +138,7 @@ function renderField(
         >
           {(param.options ?? []).map((opt) => (
             <option key={opt} value={opt}>
-              {opt}
+              {param.optionLabels?.[opt] ?? humanizeOption(opt)}
             </option>
           ))}
         </select>

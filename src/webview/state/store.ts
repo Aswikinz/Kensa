@@ -10,9 +10,12 @@ import type {
   DiffSummary,
   EditorMode,
   EngineKind,
+  FilterSpec,
   OperationStep,
-  QuickInsight
+  QuickInsight,
+  SortSpec
 } from '../../shared/types';
+import { postMessage } from '../vscodeApi';
 
 export interface KensaState {
   // Server state
@@ -33,6 +36,12 @@ export interface KensaState {
   loading: boolean;
   switching: boolean;
   error: string | null;
+
+  // Active view: the sort + filter list currently applied to the grid. We
+  // track them in the webview so the Toolbar can show a live count and
+  // individual column headers can clear only their own filters.
+  activeFilters: FilterSpec[];
+  activeSort: SortSpec | null;
 
   // UI state
   selectedColumn: number | null;
@@ -67,6 +76,14 @@ export interface KensaState {
   toggleSummaryPanel: () => void;
   toggleOperationsPanel: () => void;
   toggleCodePreview: () => void;
+
+  // Filter + sort actions. All of these are self-dispatching — they update
+  // local state AND post the resulting applyFilter / applySort message to
+  // the extension, so callers only need to invoke one function.
+  addOrReplaceColumnFilter: (filter: FilterSpec) => void;
+  removeColumnFilter: (columnIndex: number) => void;
+  clearAllFilters: () => void;
+  applySort: (sort: SortSpec | null) => void;
 }
 
 export const useKensaStore = create<KensaState>((set) => ({
@@ -84,6 +101,8 @@ export const useKensaStore = create<KensaState>((set) => ({
   loading: true,
   switching: false,
   error: null,
+  activeFilters: [],
+  activeSort: null,
 
   selectedColumn: null,
   selectedOperationId: null,
@@ -111,7 +130,9 @@ export const useKensaStore = create<KensaState>((set) => ({
       showCodePreview: mode === 'editing'
     }),
   setEngine: (engine) => set({ engine }),
-  setSource: (source) => set({ source }),
+  setSource: (source) =>
+    // Changing source = new panel load — drop any stale filter/sort state.
+    set({ source, activeFilters: [], activeSort: null }),
   setFileName: (fileName) => set({ fileName }),
   setLoading: (loading) => set({ loading }),
   setSwitching: (switching) => set({ switching }),
@@ -126,5 +147,42 @@ export const useKensaStore = create<KensaState>((set) => ({
     })),
   toggleSummaryPanel: () => set((s) => ({ showSummaryPanel: !s.showSummaryPanel })),
   toggleOperationsPanel: () => set((s) => ({ showOperationsPanel: !s.showOperationsPanel })),
-  toggleCodePreview: () => set((s) => ({ showCodePreview: !s.showCodePreview }))
+  toggleCodePreview: () => set((s) => ({ showCodePreview: !s.showCodePreview })),
+
+  addOrReplaceColumnFilter: (filter) =>
+    set((s) => {
+      // Only one filter per column per op — we dedupe by (column, op) so
+      // clicking "Filter: duplicated values" twice is idempotent, and
+      // switching from "Filter: not missing" to "Filter: duplicated values"
+      // on the same column replaces rather than accumulates.
+      const next = s.activeFilters
+        .filter((f) => !(f.columnIndex === filter.columnIndex && f.op === filter.op))
+        // For the same column, also drop any *other* op — users expect at
+        // most one quick filter per column until the generic Filter op is
+        // used.
+        .filter((f) => f.columnIndex !== filter.columnIndex);
+      next.push(filter);
+      postMessage({ type: 'applyFilter', filters: next });
+      return { activeFilters: next };
+    }),
+
+  removeColumnFilter: (columnIndex) =>
+    set((s) => {
+      const next = s.activeFilters.filter((f) => f.columnIndex !== columnIndex);
+      postMessage({ type: 'applyFilter', filters: next });
+      return { activeFilters: next };
+    }),
+
+  clearAllFilters: () =>
+    set(() => {
+      postMessage({ type: 'applyFilter', filters: [] });
+      postMessage({ type: 'applySort', sort: null });
+      return { activeFilters: [], activeSort: null };
+    }),
+
+  applySort: (sort) =>
+    set(() => {
+      postMessage({ type: 'applySort', sort });
+      return { activeSort: sort };
+    })
 }));

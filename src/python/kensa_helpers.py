@@ -38,7 +38,13 @@ except Exception:  # pragma: no cover
 
 
 class KensaState:
-    """Holds the original DF plus the current working copy + applied steps."""
+    """Holds the original DF plus the current working copy + applied steps.
+
+    `view_filters` and `view_sort` are transient, webview-driven view controls
+    that get re-applied as a mask on top of `working_df` every time the grid
+    asks for a slice. They are NOT part of the step history — clearing them
+    returns the view to the committed working_df. That's how clearing a
+    quick filter instantly restores hidden rows in Editing mode."""
 
     def __init__(self) -> None:
         self.orig_df: Optional["pd.DataFrame"] = None
@@ -46,6 +52,8 @@ class KensaState:
         self.preview_df: Optional["pd.DataFrame"] = None
         self.file_path: Optional[str] = None
         self.steps: List[Dict[str, Any]] = []
+        self.view_filters: List[Dict[str, Any]] = []
+        self.view_sort: Optional[Dict[str, Any]] = None
 
     def replay(self) -> None:
         """Re-apply all stored steps to the original DF."""
@@ -55,6 +63,75 @@ class KensaState:
         for step in self.steps:
             df = exec_step(df, step["code"])
         self.working_df = df
+
+    def viewed_df(self) -> Optional["pd.DataFrame"]:
+        """The working_df after the transient view filters + sort are applied.
+        Used by every slice/stats query so the view stays in sync with the
+        webview's `activeFilters` without mutating the step history."""
+        if self.working_df is None:
+            return None
+        df = self.working_df
+        if self.view_filters:
+            df = _apply_view_filters(df, self.view_filters)
+        if self.view_sort:
+            col = self.view_sort.get("column")
+            asc = bool(self.view_sort.get("ascending", True))
+            if col is not None and col in df.columns:
+                df = df.sort_values(by=col, ascending=asc, na_position="last")
+        return df
+
+
+def _apply_view_filters(df: "pd.DataFrame", filters: List[Dict[str, Any]]) -> "pd.DataFrame":
+    """Evaluate the view filter list into a boolean mask and return the
+    filtered dataframe. Unknown ops / unknown columns are ignored (the mask
+    stays True)."""
+    if pd is None or df is None or not filters:
+        return df
+    mask = pd.Series(True, index=df.index)
+    for f in filters:
+        col = f.get("column")
+        op = f.get("op")
+        val = f.get("value")
+        if col is None or col not in df.columns:
+            continue
+        series = df[col]
+        try:
+            if op == "is_missing":
+                m = series.isna()
+            elif op == "is_not_missing":
+                m = series.notna()
+            elif op == "is_duplicated":
+                m = series.duplicated(keep=False) & series.notna()
+            elif op == "is_unique":
+                m = ~series.duplicated(keep=False) & series.notna()
+            elif op == "eq":
+                m = series.astype(str) == str(val)
+            elif op == "ne":
+                m = series.astype(str) != str(val)
+            elif op == "gt":
+                m = pd.to_numeric(series, errors="coerce") > float(val)
+            elif op == "gte":
+                m = pd.to_numeric(series, errors="coerce") >= float(val)
+            elif op == "lt":
+                m = pd.to_numeric(series, errors="coerce") < float(val)
+            elif op == "lte":
+                m = pd.to_numeric(series, errors="coerce") <= float(val)
+            elif op == "contains":
+                m = series.astype(str).str.contains(str(val), na=False, regex=False)
+            elif op == "starts_with":
+                m = series.astype(str).str.startswith(str(val), na=False)
+            elif op == "ends_with":
+                m = series.astype(str).str.endswith(str(val), na=False)
+            elif op == "regex":
+                m = series.astype(str).str.contains(str(val), na=False, regex=True)
+            else:
+                continue
+            mask = mask & m.fillna(False)
+        except Exception:  # noqa: BLE001
+            # Any evaluation error (dtype mismatch, bad regex, etc.) just
+            # skips that filter rather than blowing up the whole slice.
+            continue
+    return df[mask]
 
 
 def exec_step(df: "pd.DataFrame", code: str) -> "pd.DataFrame":
@@ -91,6 +168,8 @@ def load_file(path: str, kind: str, options: Optional[Dict[str, Any]] = None) ->
     STATE.preview_df = None
     STATE.file_path = path
     STATE.steps = []
+    STATE.view_filters = []
+    STATE.view_sort = None
     return dataset_info(df)
 
 
@@ -107,6 +186,8 @@ def load_pickle(path: str) -> Dict[str, Any]:
     STATE.preview_df = None
     STATE.file_path = path
     STATE.steps = []
+    STATE.view_filters = []
+    STATE.view_sort = None
     return dataset_info(df)
 
 
@@ -136,13 +217,24 @@ def friendly_dtype(dtype_str: str) -> str:
 # -- slicing / stats ---------------------------------------------------------
 
 def current_df() -> "pd.DataFrame":
+    """The committed working_df. Used by writes (apply_code, preview)."""
     if STATE.working_df is None:
         raise RuntimeError("no dataset loaded")
     return STATE.working_df
 
 
+def current_view() -> "pd.DataFrame":
+    """The working_df with transient view filters + sort applied. Used by
+    every read (slice, stats, insights) so the webview sees a consistently
+    filtered/sorted view without mutating the step history."""
+    df = STATE.viewed_df()
+    if df is None:
+        raise RuntimeError("no dataset loaded")
+    return df
+
+
 def get_slice(start: int, end: int) -> Dict[str, Any]:
-    df = current_df()
+    df = current_view()
     total = len(df)
     start = max(0, min(start, total))
     end = max(start, min(end, total))
@@ -169,6 +261,20 @@ def get_slice(start: int, end: int) -> Dict[str, Any]:
     }
 
 
+def set_view_filters(filters: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Replace the transient view filter list. The filters are NOT stored as
+    Pandas steps — they live only in STATE.view_filters and are re-applied
+    on every read. Returns a fresh first-page slice of the resulting view."""
+    STATE.view_filters = list(filters or [])
+    return get_slice(0, 500)
+
+
+def set_view_sort(sort: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Replace the transient view sort. Pass `None` (or {}) to clear."""
+    STATE.view_sort = sort if sort else None
+    return get_slice(0, 500)
+
+
 def _cell_to_json(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -183,7 +289,7 @@ def _cell_to_json(value: Any) -> Optional[str]:
 
 
 def get_column_stats(column_index: int) -> Dict[str, Any]:
-    df = current_df()
+    df = current_view()
     col_name = df.columns[column_index]
     series = df[col_name]
     stats: Dict[str, Any] = {
@@ -239,7 +345,7 @@ def _json_number(v: Any) -> Optional[str]:
 
 
 def get_all_insights() -> List[Dict[str, Any]]:
-    df = current_df()
+    df = current_view()
     insights: List[Dict[str, Any]] = []
     for i, col_name in enumerate(df.columns):
         series = df[col_name]
@@ -383,6 +489,8 @@ DISPATCH: Dict[str, Any] = {
     "export_csv": lambda msg: export_csv(msg["path"]),
     "export_parquet": lambda msg: export_parquet(msg["path"]),
     "diff": lambda msg: diff_against(msg["prev"], msg["new"]),
+    "set_view_filters": lambda msg: set_view_filters(msg.get("filters") or []),
+    "set_view_sort": lambda msg: set_view_sort(msg.get("sort")),
 }
 
 

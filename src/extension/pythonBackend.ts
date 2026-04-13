@@ -11,10 +11,8 @@ import type {
   DataSlice,
   DatasetInfo,
   DiffSummary,
-  FilterSpec,
   OperationStep,
-  QuickInsight,
-  SortSpec
+  QuickInsight
 } from '../shared/types';
 
 interface PendingRequest {
@@ -38,8 +36,8 @@ type BackendCommand =
       prev: Array<Array<string | null>>;
       new: Array<Array<string | null>>;
     }
-  | { cmd: 'sort'; sort: SortSpec | null }
-  | { cmd: 'filter'; filters: FilterSpec[] };
+  | { cmd: 'set_view_filters'; filters: Array<{ column: string; op: string; value?: string }> }
+  | { cmd: 'set_view_sort'; sort: { column: string; ascending: boolean } | null };
 
 export class PythonBackend {
   private proc: ChildProcess | null = null;
@@ -190,6 +188,22 @@ export class PythonBackend {
 
   async getAllInsights(): Promise<QuickInsight[]> {
     return (await this.request({ cmd: 'get_all_insights' })) as QuickInsight[];
+  }
+
+  /** Replace the transient view filters on the Python side and return a
+   *  fresh first-page slice of the resulting view. The filters are NOT
+   *  applied as steps, so clearing them (pass `[]`) instantly restores the
+   *  previously-hidden rows. */
+  async setViewFilters(
+    filters: Array<{ column: string; op: string; value?: string }>
+  ): Promise<DataSlice> {
+    return (await this.request({ cmd: 'set_view_filters', filters })) as DataSlice;
+  }
+
+  /** Replace the transient view sort on the Python side. Pass `null` to
+   *  clear. Returns a fresh first-page slice. */
+  async setViewSort(sort: { column: string; ascending: boolean } | null): Promise<DataSlice> {
+    return (await this.request({ cmd: 'set_view_sort', sort })) as DataSlice;
   }
 
   async applyCode(code: string, step: OperationStep): Promise<DataSlice> {
