@@ -64,13 +64,34 @@
   background: transparent;
   color: inherit;
   border: none;
-  padding: 4px 12px;
+  padding: 4px 14px;
   cursor: pointer;
+  min-width: 54px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.kensa-mode-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 .kensa-mode-btn.kensa-mode-active {
   background: var(--kensa-accent);
   color: var(--kensa-button-fg);
+}
+
+.kensa-mode-hint {
+  color: var(--kensa-muted);
+  font-size: 11px;
+  border: 1px dashed var(--kensa-border);
+  padding: 3px 10px;
+  border-radius: 4px;
+}
+
+.kensa-btn-ghost {
+  font-size: 11px;
+  padding: 4px 10px;
 }
 
 .kensa-engine-indicator,
@@ -304,30 +325,76 @@
   z-index: 3;
 }
 
+/* Popover dropdown for the column header menu. Must be visually obvious so
+   it doesn't blend into the grid behind it — otherwise users mistake the
+   menu items for a current filter state. Uses the VS Code dropdown variables
+   when available so theming matches the host. */
 .kensa-col-menu {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 2px);
   right: 0;
-  z-index: 5;
-  background: var(--vscode-editor-background);
-  border: 1px solid var(--kensa-border);
+  z-index: 100;
+  background: var(--vscode-menu-background, var(--vscode-dropdown-background, var(--vscode-editor-background)));
+  color: var(--vscode-menu-foreground, var(--vscode-dropdown-foreground, inherit));
+  border: 1px solid var(--vscode-menu-border, var(--vscode-dropdown-border, var(--kensa-border)));
+  border-radius: 4px;
   display: flex;
   flex-direction: column;
-  min-width: 160px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  min-width: 180px;
+  padding: 4px 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  /* Force this menu into its own stacking context so it paints above
+     sibling rows regardless of the parent sticky header's context. */
+  isolation: isolate;
+}
+
+.kensa-col-menu::before {
+  /* Tiny pointer-arrow on the top-right, anchoring the popover to its
+     trigger. Purely decorative — helps the user see that this is a
+     dropdown, not a row of data. */
+  content: '';
+  position: absolute;
+  top: -6px;
+  right: 10px;
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  border-left: 1px solid var(--vscode-menu-border, var(--kensa-border));
+  border-top: 1px solid var(--vscode-menu-border, var(--kensa-border));
+  transform: rotate(45deg);
 }
 
 .kensa-col-menu button {
   background: transparent;
   color: inherit;
   border: none;
-  padding: 6px 12px;
+  padding: 6px 14px;
   text-align: left;
   cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
-.kensa-col-menu button:hover {
-  background: var(--kensa-row-hover);
+.kensa-col-menu button:hover,
+.kensa-col-menu button:focus-visible {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground, var(--kensa-row-hover)));
+  color: var(--vscode-menu-selectionForeground, inherit);
+  outline: none;
+}
+
+.kensa-col-menu-divider {
+  height: 1px;
+  background: var(--vscode-menu-separatorBackground, var(--kensa-border));
+  margin: 4px 0;
+}
+
+.kensa-col-menu-scrim {
+  /* Full-screen transparent overlay that closes the menu when the user
+     clicks anywhere outside it. */
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+  background: transparent;
 }
 
 /* Insight visualizations ---------------------------------------------------*/

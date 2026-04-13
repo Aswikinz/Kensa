@@ -22,6 +22,7 @@ export function App() {
     setColumnStats,
     setMode,
     setEngine,
+    setSource,
     setFileName,
     addStep,
     removeStep,
@@ -39,6 +40,7 @@ export function App() {
         case 'bootstrap':
           setMode(msg.mode);
           setEngine(msg.engine);
+          setSource(msg.source);
           setFileName(msg.fileName);
           break;
         case 'dataSlice':
@@ -90,6 +92,7 @@ export function App() {
     setColumnStats,
     setMode,
     setEngine,
+    setSource,
     setFileName,
     addStep,
     removeStep,

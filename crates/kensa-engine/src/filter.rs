@@ -7,6 +7,7 @@ use crate::errors::{KensaError, KensaResult};
 use crate::types::FilterSpec;
 use crate::DataFrame;
 use regex::RegexBuilder;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct FilterOp {
@@ -29,6 +30,11 @@ pub enum FilterKind {
     EndsWith,
     IsMissing,
     IsNotMissing,
+    /// Keep rows where this column's value appears more than once. Requires
+    /// a pre-pass to build the set of duplicated values.
+    IsDuplicated,
+    /// Keep rows where this column's value appears exactly once.
+    IsUnique,
     Regex,
 }
 
@@ -46,6 +52,8 @@ impl FilterOp {
             "ends_with" => FilterKind::EndsWith,
             "is_missing" => FilterKind::IsMissing,
             "is_not_missing" => FilterKind::IsNotMissing,
+            "is_duplicated" => FilterKind::IsDuplicated,
+            "is_unique" => FilterKind::IsUnique,
             "regex" => FilterKind::Regex,
             _ => FilterKind::Eq,
         };
@@ -68,11 +76,44 @@ pub fn apply_filters(df: &DataFrame, filters: &[FilterOp]) -> KensaResult<Vec<us
         }
     }
 
+    // Pre-pass for duplicate/unique filters — each of these needs to know
+    // the full frequency of every value in its column before we can classify
+    // any single row. We compute one bool vector per filter, indexed by row.
+    let mut prepass: HashMap<usize, Vec<bool>> = HashMap::new();
+    for (fi, f) in filters.iter().enumerate() {
+        if matches!(f.op, FilterKind::IsDuplicated | FilterKind::IsUnique) {
+            let col = &df.columns[f.column_index];
+            let counts = value_counts(col);
+            let wants_dup = matches!(f.op, FilterKind::IsDuplicated);
+            let flags: Vec<bool> = (0..df.row_count)
+                .map(|r| {
+                    if col.is_missing(r) {
+                        return false;
+                    }
+                    let key = cell_key(col, r);
+                    let c = counts.get(&key).copied().unwrap_or(0);
+                    if wants_dup {
+                        c > 1
+                    } else {
+                        c == 1
+                    }
+                })
+                .collect();
+            prepass.insert(fi, flags);
+        }
+    }
+
     let mut out = Vec::with_capacity(df.row_count / 2);
     for row in 0..df.row_count {
         let mut keep = true;
-        for f in filters {
-            if !row_matches(&df.columns[f.column_index], row, f)? {
+        for (fi, f) in filters.iter().enumerate() {
+            let matches_filter = match f.op {
+                FilterKind::IsDuplicated | FilterKind::IsUnique => {
+                    prepass.get(&fi).map(|v| v[row]).unwrap_or(false)
+                }
+                _ => row_matches(&df.columns[f.column_index], row, f)?,
+            };
+            if !matches_filter {
                 keep = false;
                 break;
             }
@@ -84,10 +125,43 @@ pub fn apply_filters(df: &DataFrame, filters: &[FilterOp]) -> KensaResult<Vec<us
     Ok(out)
 }
 
+/// Build a stringified value → count map for the column. Missing cells are
+/// skipped entirely so they don't count as duplicates of each other.
+fn value_counts(col: &ColumnData) -> HashMap<String, u32> {
+    let mut counts: HashMap<String, u32> = HashMap::new();
+    for row in 0..col.len() {
+        if col.is_missing(row) {
+            continue;
+        }
+        let key = cell_key(col, row);
+        *counts.entry(key).or_insert(0) += 1;
+    }
+    counts
+}
+
+/// Stable string key for a cell. For floats we use bit-pattern encoding so
+/// +0.0 and -0.0 hash the same and NaN compares equal to itself.
+fn cell_key(col: &ColumnData, row: usize) -> String {
+    match col {
+        ColumnData::Int64(v) => v[row].map(|n| n.to_string()).unwrap_or_default(),
+        ColumnData::Float64(v) => v[row]
+            .map(|n| if n.is_nan() { "NaN".to_string() } else { n.to_bits().to_string() })
+            .unwrap_or_default(),
+        ColumnData::Utf8(v) => v[row].clone().unwrap_or_default(),
+        ColumnData::Boolean(v) => v[row].map(|b| b.to_string()).unwrap_or_default(),
+        ColumnData::DateTime(v) => v[row].map(|n| n.to_string()).unwrap_or_default(),
+    }
+}
+
 fn row_matches(col: &ColumnData, row: usize, f: &FilterOp) -> KensaResult<bool> {
     match f.op {
         FilterKind::IsMissing => Ok(col.is_missing(row)),
         FilterKind::IsNotMissing => Ok(!col.is_missing(row)),
+        // The duplicate/unique filters are resolved in apply_filters via a
+        // pre-pass — if we land here it's a programming error.
+        FilterKind::IsDuplicated | FilterKind::IsUnique => Err(KensaError::InvalidFilter(
+            "duplicate filters must be handled in pre-pass".into(),
+        )),
         _ => {
             if col.is_missing(row) {
                 return Ok(false);
@@ -181,5 +255,60 @@ fn compare_partial(a: f64, b: f64, op: &FilterKind) -> bool {
         FilterKind::Lt => ord == Less,
         FilterKind::Lte => ord != Greater,
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::column::ColumnData;
+
+    fn df_with_strings(values: Vec<Option<&str>>) -> DataFrame {
+        DataFrame::new(
+            vec![ColumnData::Utf8(
+                values.into_iter().map(|v| v.map(|s| s.to_string())).collect(),
+            )],
+            vec!["x".to_string()],
+        )
+    }
+
+    #[test]
+    fn duplicated_filter_keeps_repeats() {
+        let df = df_with_strings(vec![Some("a"), Some("b"), Some("a"), Some("c"), Some("a")]);
+        let filters = vec![FilterOp {
+            column_index: 0,
+            op: FilterKind::IsDuplicated,
+            value: None,
+            case_insensitive: false,
+        }];
+        let idx = apply_filters(&df, &filters).unwrap();
+        assert_eq!(idx, vec![0, 2, 4]);
+    }
+
+    #[test]
+    fn unique_filter_keeps_singletons() {
+        let df = df_with_strings(vec![Some("a"), Some("b"), Some("a"), Some("c")]);
+        let filters = vec![FilterOp {
+            column_index: 0,
+            op: FilterKind::IsUnique,
+            value: None,
+            case_insensitive: false,
+        }];
+        let idx = apply_filters(&df, &filters).unwrap();
+        assert_eq!(idx, vec![1, 3]);
+    }
+
+    #[test]
+    fn duplicate_filter_ignores_missing() {
+        let df = df_with_strings(vec![None, None, Some("a"), Some("a")]);
+        let filters = vec![FilterOp {
+            column_index: 0,
+            op: FilterKind::IsDuplicated,
+            value: None,
+            case_insensitive: false,
+        }];
+        let idx = apply_filters(&df, &filters).unwrap();
+        // Missing cells don't count as duplicates of each other.
+        assert_eq!(idx, vec![2, 3]);
     }
 }

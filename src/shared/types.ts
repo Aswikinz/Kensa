@@ -91,6 +91,8 @@ export type FilterOp =
   | 'ends_with'
   | 'is_missing'
   | 'is_not_missing'
+  | 'is_duplicated'
+  | 'is_unique'
   | 'regex';
 
 export interface FilterSpec {

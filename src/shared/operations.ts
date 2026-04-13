@@ -91,7 +91,9 @@ export const OPERATIONS: readonly OperationSpec[] = [
           'starts_with',
           'ends_with',
           'is_missing',
-          'is_not_missing'
+          'is_not_missing',
+          'is_duplicated',
+          'is_unique'
         ],
         defaultValue: 'equals'
       },
@@ -117,6 +119,10 @@ export const OPERATIONS: readonly OperationSpec[] = [
           return `df = df[df[${col}].isna()]`;
         case 'is_not_missing':
           return `df = df[df[${col}].notna()]`;
+        case 'is_duplicated':
+          return `df = df[df[${col}].duplicated(keep=False)]`;
+        case 'is_unique':
+          return `df = df[~df[${col}].duplicated(keep=False)]`;
         case 'equals':
         default:
           return `df = df[df[${col}] == ${v}]`;

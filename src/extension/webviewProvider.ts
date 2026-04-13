@@ -84,7 +84,8 @@ export class WebviewProvider implements vscode.Disposable {
         type: 'bootstrap',
         mode: router.currentMode,
         engine: router.currentEngine,
-        fileName: path.basename(uri.fsPath)
+        fileName: path.basename(uri.fsPath),
+        source: 'file'
       });
       this.post(entry, { type: 'dataSlice', slice: firstSlice });
       entry.lastSlice = firstSlice;
@@ -163,7 +164,8 @@ export class WebviewProvider implements vscode.Disposable {
         type: 'bootstrap',
         mode: router.currentMode,
         engine: router.currentEngine,
-        fileName: name
+        fileName: name,
+        source: 'variable'
       });
       this.post(entry, { type: 'dataSlice', slice: firstSlice });
       entry.lastSlice = firstSlice;
@@ -243,7 +245,8 @@ export class WebviewProvider implements vscode.Disposable {
             type: 'bootstrap',
             mode: router.currentMode,
             engine: router.currentEngine,
-            fileName: this.currentFileName(router)
+            fileName: this.currentFileName(router),
+            source: router.currentSource?.kind ?? 'file'
           });
           break;
 
@@ -322,10 +325,17 @@ export class WebviewProvider implements vscode.Disposable {
         }
 
         case 'switchMode': {
+          this.output.appendLine(
+            `[kensa] switchMode requested: ${msg.mode} (current=${router.currentMode}, source=${router.currentSource?.kind ?? 'none'})`
+          );
           await router.switchMode(msg.mode);
+          this.output.appendLine(
+            `[kensa] switchMode done: now mode=${router.currentMode}, engine=${router.currentEngine}`
+          );
           this.post(entry, { type: 'modeChanged', mode: router.currentMode });
           this.post(entry, { type: 'engineStatus', engine: router.currentEngine, ready: true });
           const slice = await router.getSlice(0, DEFAULT_PAGE_SIZE);
+          entry.lastSlice = slice;
           this.post(entry, { type: 'dataSlice', slice });
           break;
         }

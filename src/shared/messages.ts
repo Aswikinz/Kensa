@@ -14,6 +14,8 @@ import type {
   SortSpec
 } from './types';
 
+export type DataSourceKind = 'file' | 'variable';
+
 // Webview -> Extension ---------------------------------------------------------
 
 export type WebviewToExtensionMessage =
@@ -37,7 +39,13 @@ export type WebviewToExtensionMessage =
 // Extension -> Webview ---------------------------------------------------------
 
 export type ExtensionToWebviewMessage =
-  | { type: 'bootstrap'; mode: EditorMode; engine: EngineKind; fileName: string }
+  | {
+      type: 'bootstrap';
+      mode: EditorMode;
+      engine: EngineKind;
+      fileName: string;
+      source: DataSourceKind;
+    }
   | { type: 'dataSlice'; slice: DataSlice }
   | { type: 'columnStats'; columnIndex: number; stats: ColumnStats }
   | { type: 'allColumnInsights'; insights: QuickInsight[] }

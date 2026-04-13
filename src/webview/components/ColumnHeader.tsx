@@ -54,6 +54,22 @@ export function ColumnHeader({ column, width, selected, onResize, onSelect }: Co
     });
   };
 
+  const filterDuplicated = () => {
+    setMenuOpen(false);
+    postMessage({
+      type: 'applyFilter',
+      filters: [{ columnIndex: column.index, op: 'is_duplicated' }]
+    });
+  };
+
+  const filterUnique = () => {
+    setMenuOpen(false);
+    postMessage({
+      type: 'applyFilter',
+      filters: [{ columnIndex: column.index, op: 'is_unique' }]
+    });
+  };
+
   return (
     <div
       className={`kensa-col-header ${selected ? 'kensa-col-header-selected' : ''}`}
@@ -82,20 +98,39 @@ export function ColumnHeader({ column, width, selected, onResize, onSelect }: Co
       </div>
 
       {menuOpen && (
-        <div className="kensa-col-menu" onClick={(e) => e.stopPropagation()}>
-          <button type="button" onClick={() => sort(true)}>Sort ascending</button>
-          <button type="button" onClick={() => sort(false)}>Sort descending</button>
-          <button type="button" onClick={filterNotMissing}>Filter: not missing</button>
-          <button
-            type="button"
-            onClick={() => {
+        <>
+          {/* Clicking anywhere outside the popover closes it. */}
+          <div
+            className="kensa-col-menu-scrim"
+            onClick={(e) => {
+              e.stopPropagation();
               setMenuOpen(false);
-              postMessage({ type: 'applySort', sort: null });
             }}
+          />
+          <div
+            className="kensa-col-menu"
+            role="menu"
+            onClick={(e) => e.stopPropagation()}
           >
-            Reset view
-          </button>
-        </div>
+            <button type="button" onClick={() => sort(true)}>↑ Sort ascending</button>
+            <button type="button" onClick={() => sort(false)}>↓ Sort descending</button>
+            <div className="kensa-col-menu-divider" />
+            <button type="button" onClick={filterNotMissing}>Filter: not missing</button>
+            <button type="button" onClick={filterDuplicated}>Filter: duplicated values</button>
+            <button type="button" onClick={filterUnique}>Filter: unique values</button>
+            <div className="kensa-col-menu-divider" />
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                postMessage({ type: 'applySort', sort: null });
+                postMessage({ type: 'applyFilter', filters: [] });
+              }}
+            >
+              Reset view
+            </button>
+          </div>
+        </>
       )}
 
       <div className="kensa-col-resize-handle" onMouseDown={onDragStart} />

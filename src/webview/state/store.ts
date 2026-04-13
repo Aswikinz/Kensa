@@ -3,6 +3,7 @@
 // flags for panel visibility and current selection.
 
 import { create } from 'zustand';
+import type { DataSourceKind } from '../../shared/messages';
 import type {
   ColumnStats,
   DataSlice,
@@ -27,8 +28,10 @@ export interface KensaState {
   previewDiff: DiffSummary | null;
   mode: EditorMode;
   engine: EngineKind;
+  source: DataSourceKind;
   fileName: string;
   loading: boolean;
+  switching: boolean;
   error: string | null;
 
   // UI state
@@ -52,8 +55,10 @@ export interface KensaState {
   setDiff: (diff: DiffSummary | null) => void;
   setMode: (mode: EditorMode) => void;
   setEngine: (engine: EngineKind) => void;
+  setSource: (source: DataSourceKind) => void;
   setFileName: (name: string) => void;
   setLoading: (loading: boolean) => void;
+  setSwitching: (switching: boolean) => void;
   setError: (message: string | null) => void;
   setSelectedColumn: (index: number | null) => void;
   setSelectedOperation: (id: string | null) => void;
@@ -74,8 +79,10 @@ export const useKensaStore = create<KensaState>((set) => ({
   previewDiff: null,
   mode: 'viewing',
   engine: 'rust',
+  source: 'file',
   fileName: '',
   loading: true,
+  switching: false,
   error: null,
 
   selectedColumn: null,
@@ -99,13 +106,16 @@ export const useKensaStore = create<KensaState>((set) => ({
   setMode: (mode) =>
     set({
       mode,
+      switching: false,
       showOperationsPanel: mode === 'editing',
       showCodePreview: mode === 'editing'
     }),
   setEngine: (engine) => set({ engine }),
+  setSource: (source) => set({ source }),
   setFileName: (fileName) => set({ fileName }),
   setLoading: (loading) => set({ loading }),
-  setError: (error) => set({ error }),
+  setSwitching: (switching) => set({ switching }),
+  setError: (error) => set({ error, switching: false }),
   setSelectedColumn: (selectedColumn) => set({ selectedColumn }),
   setSelectedOperation: (selectedOperationId) =>
     set({ selectedOperationId, previewCode: '', previewSlice: null, previewDiff: null }),

@@ -329,6 +329,10 @@ function filterOpToCondition(op: FilterSpec['op']): string {
       return 'is_missing';
     case 'is_not_missing':
       return 'is_not_missing';
+    case 'is_duplicated':
+      return 'is_duplicated';
+    case 'is_unique':
+      return 'is_unique';
     default:
       return 'equals';
   }
