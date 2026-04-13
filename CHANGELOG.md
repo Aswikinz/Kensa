@@ -4,9 +4,20 @@ All notable changes to Kensa are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Kensa follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] — 2026-04-13
+
+### Fixed
+- Renamed the extension's internal `name` from `kensa` to `kensa-viewer`
+  because the short name `kensa` is already registered by a different
+  publisher on the VS Code Marketplace. The user-visible `displayName`
+  remains "Kensa"; only the marketplace identifier changes (now
+  `AswinKithalawaarachchi.kensa-viewer`). This was discovered when the
+  `v0.1.0` marketplace publish failed with *"The extension 'kensa'
+  already exists in the Marketplace"*.
+
 ## [0.1.0] — 2026-04-13
 
-First public release.
+First public release (never reached the marketplace — see 0.1.1).
 
 ### Rust engine
 
@@ -192,4 +203,5 @@ First public release.
 
 ---
 
+[0.1.1]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.0
