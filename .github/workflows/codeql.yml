@@ -30,22 +30,22 @@ jobs:
             build-mode: none
           - language: python
             build-mode: none
-          # CodeQL supports Rust via the `rust` language identifier in its
-          # beta channel. We build the native addon manually so CodeQL can
-          # observe the compilation.
+          # CodeQL's Rust extractor (in beta at the time of writing) only
+          # supports `build-mode: none` — it discovers the crate graph via
+          # cargo metadata rather than observing a real build. Attempting
+          # `manual` here is a hard error: "Rust does not support the
+          # manual build mode." We don't need to run `cargo build` at all;
+          # the extractor handles everything from the source tree.
           - language: rust
-            build-mode: manual
+            build-mode: none
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        if: matrix.language == 'rust'
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        # v4 — v3 is deprecated December 2026.
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -54,11 +54,7 @@ jobs:
           # style issues in addition to security findings.
           queries: security-and-quality
 
-      - name: Manual build (Rust)
-        if: matrix.language == 'rust'
-        run: cargo build --manifest-path crates/kensa-engine/Cargo.toml
-
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
