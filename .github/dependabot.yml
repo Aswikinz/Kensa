@@ -1,7 +1,15 @@
 # Automated dependency + security updates for Kensa.
-# Dependabot will open weekly PRs for npm, cargo, and the GitHub Actions
-# workflow versions. Security advisories are opened as PRs immediately,
-# outside the weekly cadence.
+#
+# One weekly PR per ecosystem that rolls every non-breaking bump into a
+# single group, plus one aggregated PR per ecosystem for major bumps so
+# the review queue doesn't explode on the first run. Security advisories
+# always open as individual PRs outside this cadence — that's by design
+# and can't be grouped.
+#
+# Tuning rationale: the first Dependabot run after adding this config
+# tends to open ~1 PR per out-of-date dep. We cap open PRs per ecosystem
+# low and group aggressively so reviewing a week of bumps is one merge
+# per ecosystem, not fifteen.
 
 version: 2
 updates:
@@ -11,7 +19,7 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "javascript"
@@ -19,13 +27,19 @@ updates:
       prefix: "npm"
       include: "scope"
     groups:
-      # Group non-breaking (patch + minor) updates into a single PR so the
-      # review queue stays manageable.
-      minor-and-patch:
+      # One PR for every non-breaking bump.
+      npm-minor-and-patch:
         applies-to: version-updates
         update-types:
           - "minor"
           - "patch"
+      # A separate PR for major bumps so they're still visible but don't
+      # fan out to N individual PRs. Review these carefully — majors
+      # usually have breaking changes.
+      npm-major:
+        applies-to: version-updates
+        update-types:
+          - "major"
 
   # Rust native data engine
   - package-ecosystem: "cargo"
@@ -41,11 +55,15 @@ updates:
       prefix: "cargo"
       include: "scope"
     groups:
-      minor-and-patch:
+      cargo-minor-and-patch:
         applies-to: version-updates
         update-types:
           - "minor"
           - "patch"
+      cargo-major:
+        applies-to: version-updates
+        update-types:
+          - "major"
 
   # GitHub Actions workflow versions
   - package-ecosystem: "github-actions"
@@ -53,8 +71,16 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    open-pull-requests-limit: 3
     labels:
       - "dependencies"
       - "ci"
     commit-message:
       prefix: "ci"
+    groups:
+      actions-all:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+          - "major"
