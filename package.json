@@ -199,7 +199,7 @@
     "vscode:prepublish": "npm run build:release"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^2.18.0",
+    "@napi-rs/cli": "^3.6.1",
     "@types/node": "^20.11.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
