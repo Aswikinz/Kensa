@@ -1,0 +1,54 @@
+# Only ship the compiled bundles + the native module + the Python helpers.
+# Everything else is development / source / tooling noise that would bloat the
+# VSIX.
+
+# Source — compiled into dist/
+src/extension/**
+src/webview/**
+src/shared/**
+# keep src/python/kensa_helpers.py — it's required at runtime
+!src/python/kensa_helpers.py
+!src/python/requirements.txt
+
+# Rust crate sources + intermediate target dir (the .node binary is copied
+# into crates/kensa-engine/ by napi build; we still need to include that).
+crates/kensa-engine/src/**
+crates/kensa-engine/target/**
+crates/kensa-engine/build.rs
+crates/kensa-engine/Cargo.toml
+crates/kensa-engine/Cargo.lock
+# Keep the napi-generated wrapper + the prebuilt .node binaries.
+!crates/kensa-engine/index.js
+!crates/kensa-engine/index.d.ts
+!crates/kensa-engine/*.node
+
+# Tests
+test/**
+.vscode-test/**
+
+# Build tooling
+scripts/**
+webpack.config.js
+esbuild.config.*
+tsconfig*.json
+.eslintrc*
+.prettierrc*
+.editorconfig
+.github/**
+
+# Dev metadata
+.gitignore
+.gitattributes
+.git/**
+.claude/**
+
+# npm
+node_modules/**
+
+# Documents / clean-room spec
+clean-room-spec.md
+agent-prompt.md
+
+# Maps + incremental build caches
+**/*.map
+**/*.tsbuildinfo

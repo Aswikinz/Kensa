@@ -71,18 +71,15 @@ export class DataRouter {
     return this.loadViaPython(descriptor);
   }
 
-  async openVariable(name: string): Promise<DatasetInfo> {
+  async openVariable(name: string, notebookHint?: vscode.Uri): Promise<DatasetInfo> {
     this.source = { kind: 'variable', name };
     this.mode = 'editing';
     this.steps = [];
     const backend = await this.kernelManager.ensureBackend();
-    const picklePath = await this.kernelManager.extractVariableToPickle(name);
-    if (!picklePath) {
-      throw new Error(
-        `Kensa could not extract variable '${name}' from a Jupyter kernel. ` +
-          'Ensure the Jupyter extension is installed and a kernel is attached to the active notebook.'
-      );
-    }
+    // extractVariableToPickle now throws a descriptive Error rather than
+    // returning null — let it propagate so the webview shows the real reason
+    // (missing extension, no kernel, variable doesn't exist, etc.).
+    const picklePath = await this.kernelManager.extractVariableToPickle(name, notebookHint);
     return backend.loadPickle(picklePath);
   }
 

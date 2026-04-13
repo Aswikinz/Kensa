@@ -59,7 +59,7 @@ jobs:
         run: npm ci || npm install
 
       - name: Build Rust native module
-        run: npx napi build --platform --release --target ${{ matrix.target }} --cargo-cwd crates/kensa-engine crates/kensa-engine
+        run: npx napi build --platform --release --target ${{ matrix.target }} --cargo-cwd crates/kensa-engine --js index.js --dts index.d.ts crates/kensa-engine
 
       - name: Build extension + webview
         run: npm run build:ts

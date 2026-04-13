@@ -102,13 +102,28 @@ export class WebviewProvider implements vscode.Disposable {
     }
   }
 
-  async openNotebookVariable(name: string): Promise<void> {
+  async openNotebookVariable(name: string, notebookHint?: vscode.Uri): Promise<void> {
     const key = `variable:${name}`;
     const existing = this.panels.get(key);
     if (existing) {
       existing.panel.reveal(vscode.ViewColumn.Active);
       return;
     }
+
+    // Attempt the extraction BEFORE spawning a panel. If it fails we show a
+    // regular VS Code error toast with the real reason, instead of opening an
+    // empty Kensa tab that just displays an error banner.
+    const probeKernel = new KernelManager(this.context.extensionPath, this.output);
+    try {
+      await probeKernel.extractVariableToPickle(name, notebookHint);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.output.appendLine(`[kensa] openNotebookVariable failed: ${message}`);
+      await probeKernel.dispose();
+      vscode.window.showErrorMessage(`Kensa: ${message}`);
+      return;
+    }
+    await probeKernel.dispose();
 
     const panel = vscode.window.createWebviewPanel(
       'kensa',
@@ -142,7 +157,7 @@ export class WebviewProvider implements vscode.Disposable {
     });
 
     try {
-      await router.openVariable(name);
+      await router.openVariable(name, notebookHint);
       const firstSlice = await router.getSlice(0, DEFAULT_PAGE_SIZE);
       this.post(entry, {
         type: 'bootstrap',

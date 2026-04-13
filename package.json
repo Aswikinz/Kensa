@@ -28,14 +28,7 @@
     "jupyter"
   ],
   "main": "./dist/extension/extension.js",
-  "activationEvents": [
-    "onCommand:kensa.openFile",
-    "onCommand:kensa.openFromExplorer",
-    "onCommand:kensa.openVariable",
-    "onCommand:kensa.clearRuntime",
-    "onCommand:kensa.exportCode",
-    "onCommand:kensa.exportData"
-  ],
+  "activationEvents": [],
   "contributes": {
     "commands": [
       {
@@ -67,6 +60,12 @@
         "command": "kensa.exportData",
         "title": "Kensa: Export Data to File",
         "category": "Kensa"
+      },
+      {
+        "command": "kensa.viewDataFromNotebook",
+        "title": "View Data in Kensa",
+        "category": "Kensa",
+        "icon": "$(table)"
       }
     ],
     "menus": {
@@ -81,6 +80,12 @@
         {
           "command": "kensa.openFromExplorer",
           "when": "false"
+        }
+      ],
+      "notebook/toolbar": [
+        {
+          "command": "kensa.viewDataFromNotebook",
+          "group": "navigation/execute@1"
         }
       ]
     },
@@ -154,17 +159,19 @@
     ]
   },
   "scripts": {
-    "build:rust": "napi build --platform --release --cargo-cwd crates/kensa-engine --js crates/kensa-engine/index.js --dts crates/kensa-engine/index.d.ts crates/kensa-engine",
-    "build:rust:debug": "napi build --platform --cargo-cwd crates/kensa-engine --js crates/kensa-engine/index.js --dts crates/kensa-engine/index.d.ts crates/kensa-engine",
+    "build:rust": "napi build --platform --release --cargo-cwd crates/kensa-engine --js index.js --dts index.d.ts crates/kensa-engine",
+    "build:rust:debug": "napi build --platform --cargo-cwd crates/kensa-engine --js index.js --dts index.d.ts crates/kensa-engine",
     "build:ts": "node scripts/build.mjs",
+    "build:ts:prod": "node scripts/build.mjs --production",
     "build:ts:watch": "node scripts/build.mjs --watch",
     "build": "npm run build:rust:debug && npm run build:ts",
+    "build:release": "npm run build:rust && npm run build:ts:prod",
     "typecheck": "tsc --noEmit -p tsconfig.extension.json && tsc --noEmit -p tsconfig.webview.json",
     "lint": "eslint src --ext .ts,.tsx",
     "test": "node scripts/test.mjs",
     "test:rust": "cargo test --manifest-path crates/kensa-engine/Cargo.toml",
     "package": "vsce package",
-    "vscode:prepublish": "npm run build"
+    "vscode:prepublish": "npm run build:release"
   },
   "devDependencies": {
     "@napi-rs/cli": "^2.18.0",

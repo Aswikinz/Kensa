@@ -4,6 +4,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum KensaError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
