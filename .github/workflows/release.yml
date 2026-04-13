@@ -111,11 +111,30 @@ jobs:
       - name: Build extension + webview (production)
         run: npm run build:ts:prod
 
+      # Pre-release detection: hyphenated SemVer tags ("v1.2.3-beta.1")
+      # build as pre-release VSIXes so vsce's manifest gets the correct
+      # `__metadata.isPreReleaseVersion` flag, which the marketplace
+      # validates at publish time. Stable tags ("v1.2.3") package normally.
+      - name: Detect release channel
+        id: channel
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          if [[ "$TAG" == *-* ]]; then
+            echo "package_flag=--pre-release" >> "$GITHUB_OUTPUT"
+          else
+            echo "package_flag=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Package VSIX
-        run: >
-          npx vsce package
-          --target ${{ matrix.vscode_target }}
-          --out "kensa-${{ matrix.vscode_target }}.vsix"
+        shell: bash
+        env:
+          PKG_FLAG: ${{ steps.channel.outputs.package_flag }}
+        run: |
+          npx vsce package \
+            --target "${{ matrix.vscode_target }}" \
+            --out "kensa-${{ matrix.vscode_target }}.vsix" \
+            $PKG_FLAG
 
       - name: Compute SHA-256
         shell: bash
@@ -202,10 +221,21 @@ jobs:
     name: Publish to marketplaces
     needs: build
     runs-on: ubuntu-latest
-    # Skip marketplace publish for pre-releases (tags containing a hyphen,
-    # e.g. v0.1.0-rc.1). Pre-releases are still created as GitHub releases
-    # above, but they don't ship to the public marketplace catalog.
-    if: ${{ !contains(github.ref_name, '-') }}
+    # The publish secrets (VSCE_PAT, OVSX_PAT) live in the `Production`
+    # GitHub environment — binding the job to that environment is what
+    # makes `${{ secrets.VSCE_PAT }}` resolve at all. Without this line
+    # the secrets silently appear as empty strings and the publish steps
+    # no-op with a warning.
+    environment: Production
+    # Tags are routed to marketplace channels by name:
+    #   v1.2.3              → stable channel    (marketplace search + auto-update)
+    #   v1.2.3-beta.1       → pre-release       (opt-in users only)
+    #   v1.2.3-rc.2         → pre-release       (opt-in users only)
+    #   v1.2.3-uat.1        → pre-release       (UAT sideloading)
+    # Every tag produces a GitHub Release; whether it's stable or
+    # pre-release is decided in the `publish` job below by the same
+    # naming convention. The `marketplace` job runs for both and just
+    # passes `--pre-release` to vsce/ovsx when appropriate.
     steps:
       - name: Checkout at tag
         uses: actions/checkout@v4
@@ -229,6 +259,26 @@ jobs:
       - name: List collected assets
         run: ls -la release-assets
 
+      # Compute whether this tag is a pre-release. Hyphenated SemVer
+      # ("v1.2.3-beta.1") is a pre-release; "v1.2.3" is stable. We pass
+      # the resulting --pre-release flag through to both vsce and ovsx
+      # so opt-in users get the build while stable users don't see it.
+      - name: Detect release channel
+        id: channel
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          if [[ "$TAG" == *-* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "channel=pre-release" >> "$GITHUB_OUTPUT"
+            echo "vsce_flag=--pre-release" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
+            echo "vsce_flag=" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Tag $TAG → channel=$(grep '^channel=' "$GITHUB_OUTPUT" | head -1 | cut -d= -f2)"
+
       # VS Code Marketplace publish. We publish each platform-specific VSIX
       # under the same version string — the marketplace will serve the right
       # one based on the user's OS/arch automatically. `vsce publish
@@ -239,6 +289,8 @@ jobs:
       - name: Publish to VS Code Marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          VSCE_FLAG: ${{ steps.channel.outputs.vsce_flag }}
+          CHANNEL: ${{ steps.channel.outputs.channel }}
         shell: bash
         run: |
           if [ -z "${VSCE_PAT:-}" ]; then
@@ -248,8 +300,8 @@ jobs:
           shopt -s nullglob
           count=0
           for vsix in release-assets/*.vsix; do
-            echo "::group::vsce publish $(basename "$vsix")"
-            vsce publish --packagePath "$vsix" --pat "$VSCE_PAT"
+            echo "::group::vsce publish ($CHANNEL) $(basename "$vsix")"
+            vsce publish --packagePath "$vsix" --pat "$VSCE_PAT" $VSCE_FLAG
             echo "::endgroup::"
             count=$((count + 1))
           done
@@ -257,14 +309,16 @@ jobs:
             echo "::error::No VSIX files found in release-assets/"
             exit 1
           fi
-          echo "Published $count VSIX file(s) to VS Code Marketplace."
+          echo "Published $count VSIX file(s) to VS Code Marketplace ($CHANNEL channel)."
 
       # Open VSX Registry publish — the open-source mirror used by VSCodium,
       # Gitpod, Cursor, code-server, etc. Independent token, independent
-      # opt-in. Same file selection logic as the vsce step above.
+      # opt-in. Pre-release flag is passed through the same way.
       - name: Publish to Open VSX Registry
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
+          VSCE_FLAG: ${{ steps.channel.outputs.vsce_flag }}
+          CHANNEL: ${{ steps.channel.outputs.channel }}
         shell: bash
         run: |
           if [ -z "${OVSX_PAT:-}" ]; then
@@ -274,8 +328,8 @@ jobs:
           shopt -s nullglob
           count=0
           for vsix in release-assets/*.vsix; do
-            echo "::group::ovsx publish $(basename "$vsix")"
-            ovsx publish "$vsix" --pat "$OVSX_PAT"
+            echo "::group::ovsx publish ($CHANNEL) $(basename "$vsix")"
+            ovsx publish "$vsix" --pat "$OVSX_PAT" $VSCE_FLAG
             echo "::endgroup::"
             count=$((count + 1))
           done
@@ -283,4 +337,4 @@ jobs:
             echo "::error::No VSIX files found in release-assets/"
             exit 1
           fi
-          echo "Published $count VSIX file(s) to Open VSX."
+          echo "Published $count VSIX file(s) to Open VSX ($CHANNEL channel)."

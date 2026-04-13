@@ -3,11 +3,21 @@
   "displayName": "Kensa",
   "description": "Visual tabular data exploration and cleaning for VS Code. Rust-powered viewer with optional Python/Pandas code-generating editor.",
   "version": "0.1.0",
-  "publisher": "kensa",
+  "publisher": "AswinKithalawaarachchi",
   "license": "MIT",
+  "preview": true,
+  "icon": "media/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kensa-dev/kensa"
+    "url": "https://github.com/Aswikinz/Kensa.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Aswikinz/Kensa/issues"
+  },
+  "homepage": "https://github.com/Aswikinz/Kensa#readme",
+  "galleryBanner": {
+    "color": "#1e1e2e",
+    "theme": "dark"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -15,8 +25,7 @@
   "categories": [
     "Data Science",
     "Notebooks",
-    "Visualization",
-    "Other"
+    "Visualization"
   ],
   "keywords": [
     "csv",
@@ -25,8 +34,24 @@
     "pandas",
     "dataframe",
     "data wrangling",
-    "jupyter"
+    "jupyter",
+    "notebook",
+    "polars",
+    "viewer"
   ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "Kensa's native Rust data engine reads files from the local filesystem. Virtual workspaces (github.dev, vscode.dev) are not supported."
+    },
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Viewing mode is safe in untrusted workspaces. Editing mode executes user-authored Python code via a subprocess and is only enabled when the workspace is trusted."
+    }
+  },
   "main": "./dist/extension/extension.js",
   "activationEvents": [],
   "contributes": {
