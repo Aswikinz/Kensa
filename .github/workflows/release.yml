@@ -15,22 +15,28 @@ name: release
 #   - creates a GitHub Release named after the tag
 #   - attaches every VSIX as a release asset, plus SHA-256 checksums
 #   - publishes each VSIX to the VS Code Marketplace (if `VSCE_PAT` is set)
-#   - publishes each VSIX to the Open VSX Registry (if `OVSX_PAT` is set)
 #
-# Required repository secrets for marketplace publishing (both optional —
-# steps no-op with a warning when the matching secret is missing):
+# Kensa targets the official VS Code Marketplace only. Users on VS Code
+# forks (VSCodium / Cursor / Gitpod / code-server) can sideload by
+# downloading the platform-specific VSIX from the GitHub Release and
+# running `code --install-extension kensa-<platform>.vsix`.
+#
+# Required repository secret for marketplace publishing (optional —
+# the step no-ops with a warning when the secret is missing):
 #
 #   VSCE_PAT  — Azure DevOps Personal Access Token with the Marketplace →
 #               Manage scope, for the publisher account that owns this
-#               extension. See https://code.visualstudio.com/api/working-with-extensions/publishing-extension#get-a-personal-access-token
-#   OVSX_PAT  — Open VSX Registry token from https://open-vsx.org/ user
-#               profile → Tokens → Create. Independent of VSCE_PAT.
+#               extension. Lives in the `Production` environment so the
+#               marketplace job can only read it after an explicit
+#               reviewer approval. See
+#               https://code.visualstudio.com/api/working-with-extensions/publishing-extension#get-a-personal-access-token
 #
 # The workflow can also be fired manually from the Actions tab via
 # `workflow_dispatch` — useful for re-running a failed release without
 # needing to delete and re-push the tag. Pre-release tags (containing a
-# hyphen, e.g. `v0.1.0-rc.1`) are created as GitHub pre-releases but are
-# intentionally skipped for marketplace publishing.
+# hyphen, e.g. `v0.1.0-rc.1`) publish to the marketplace's pre-release
+# channel, which only users who opted into "Install Pre-Release Version"
+# can see.
 
 on:
   push:
@@ -221,11 +227,10 @@ jobs:
     name: Publish to marketplaces
     needs: build
     runs-on: ubuntu-latest
-    # The publish secrets (VSCE_PAT, OVSX_PAT) live in the `Production`
-    # GitHub environment — binding the job to that environment is what
-    # makes `${{ secrets.VSCE_PAT }}` resolve at all. Without this line
-    # the secrets silently appear as empty strings and the publish steps
-    # no-op with a warning.
+    # VSCE_PAT lives in the `Production` GitHub environment — binding
+    # the job to that environment is what makes `${{ secrets.VSCE_PAT }}`
+    # resolve at all. Without this line the secret silently appears as
+    # an empty string and the publish step no-ops with a warning.
     environment: Production
     # Tags are routed to marketplace channels by name:
     #   v1.2.3              → stable channel    (marketplace search + auto-update)
@@ -234,8 +239,8 @@ jobs:
     #   v1.2.3-uat.1        → pre-release       (UAT sideloading)
     # Every tag produces a GitHub Release; whether it's stable or
     # pre-release is decided in the `publish` job below by the same
-    # naming convention. The `marketplace` job runs for both and just
-    # passes `--pre-release` to vsce/ovsx when appropriate.
+    # naming convention. The `marketplace` job runs for both and passes
+    # `--pre-release` to vsce when appropriate.
     steps:
       - name: Checkout at tag
         uses: actions/checkout@v4
@@ -248,7 +253,7 @@ jobs:
           node-version: "20"
 
       - name: Install publish tools
-        run: npm install -g @vscode/vsce ovsx
+        run: npm install -g @vscode/vsce
 
       - name: Download all VSIX artifacts
         uses: actions/download-artifact@v4
@@ -261,8 +266,8 @@ jobs:
 
       # Compute whether this tag is a pre-release. Hyphenated SemVer
       # ("v1.2.3-beta.1") is a pre-release; "v1.2.3" is stable. We pass
-      # the resulting --pre-release flag through to both vsce and ovsx
-      # so opt-in users get the build while stable users don't see it.
+      # the resulting --pre-release flag through to vsce so opt-in users
+      # get the build while stable users don't see it.
       - name: Detect release channel
         id: channel
         shell: bash
@@ -279,13 +284,16 @@ jobs:
           fi
           echo "Tag $TAG → channel=$(grep '^channel=' "$GITHUB_OUTPUT" | head -1 | cut -d= -f2)"
 
-      # VS Code Marketplace publish. We publish each platform-specific VSIX
-      # under the same version string — the marketplace will serve the right
-      # one based on the user's OS/arch automatically. `vsce publish
-      # --packagePath` uploads an already-built VSIX without rebuilding.
+      # VS Code Marketplace publish. Each platform-specific VSIX is
+      # uploaded under the same version string — the marketplace routes
+      # users to the right binary based on their OS/arch.
       #
-      # If VSCE_PAT is not configured, we emit a GitHub annotation and exit
-      # with success so the marketplace step is effectively opt-in.
+      # This step is idempotent: if a version has already been published
+      # (e.g. because we're re-running a failed release after the Open
+      # VSX step crashed first time), we log a warning and continue
+      # instead of failing the job. This lets `re-run failed jobs` work
+      # cleanly even when only one of the two marketplaces needed to
+      # actually ship.
       - name: Publish to VS Code Marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
@@ -294,47 +302,47 @@ jobs:
         shell: bash
         run: |
           if [ -z "${VSCE_PAT:-}" ]; then
-            echo "::warning title=VS Code Marketplace skipped::VSCE_PAT secret is not set. Add it under Settings → Secrets → Actions to publish to the VS Code Marketplace."
+            echo "::warning title=VS Code Marketplace skipped::VSCE_PAT secret is not set. Add it under Settings → Environments → Production to publish."
             exit 0
           fi
           shopt -s nullglob
-          count=0
+          published=0
+          skipped=0
+          failed=0
           for vsix in release-assets/*.vsix; do
             echo "::group::vsce publish ($CHANNEL) $(basename "$vsix")"
-            vsce publish --packagePath "$vsix" --pat "$VSCE_PAT" $VSCE_FLAG
+            set +e
+            output=$(vsce publish --packagePath "$vsix" --pat "$VSCE_PAT" $VSCE_FLAG 2>&1)
+            rc=$?
+            set -e
+            echo "$output"
+            if [ $rc -eq 0 ]; then
+              published=$((published + 1))
+            elif echo "$output" | grep -qiE "already (exists|published)"; then
+              # This version+target combo is already on the marketplace,
+              # probably from a partially-successful previous run. Move on.
+              echo "::notice title=vsce skipped::already published, nothing to do"
+              skipped=$((skipped + 1))
+            else
+              failed=$((failed + 1))
+            fi
             echo "::endgroup::"
-            count=$((count + 1))
           done
-          if [ "$count" -eq 0 ]; then
+          echo "vsce: published=$published skipped=$skipped failed=$failed"
+          if [ "$failed" -gt 0 ]; then
+            echo "::error::VS Code Marketplace publish had $failed hard failures"
+            exit 1
+          fi
+          if [ "$((published + skipped))" -eq 0 ]; then
             echo "::error::No VSIX files found in release-assets/"
             exit 1
           fi
-          echo "Published $count VSIX file(s) to VS Code Marketplace ($CHANNEL channel)."
 
-      # Open VSX Registry publish — the open-source mirror used by VSCodium,
-      # Gitpod, Cursor, code-server, etc. Independent token, independent
-      # opt-in. Pre-release flag is passed through the same way.
-      - name: Publish to Open VSX Registry
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
-          VSCE_FLAG: ${{ steps.channel.outputs.vsce_flag }}
-          CHANNEL: ${{ steps.channel.outputs.channel }}
-        shell: bash
-        run: |
-          if [ -z "${OVSX_PAT:-}" ]; then
-            echo "::warning title=Open VSX skipped::OVSX_PAT secret is not set. Add it under Settings → Secrets → Actions to publish to Open VSX."
-            exit 0
-          fi
-          shopt -s nullglob
-          count=0
-          for vsix in release-assets/*.vsix; do
-            echo "::group::ovsx publish ($CHANNEL) $(basename "$vsix")"
-            ovsx publish "$vsix" --pat "$OVSX_PAT" $VSCE_FLAG
-            echo "::endgroup::"
-            count=$((count + 1))
-          done
-          if [ "$count" -eq 0 ]; then
-            echo "::error::No VSIX files found in release-assets/"
-            exit 1
-          fi
-          echo "Published $count VSIX file(s) to Open VSX ($CHANNEL channel)."
+      # Note: Open VSX publishing is deliberately NOT wired up. Kensa
+      # targets the official VS Code Marketplace only. Users on VS Code
+      # forks (VSCodium, Cursor, Gitpod, code-server) can still install
+      # by downloading the platform-specific VSIX from the GitHub
+      # Release above and sideloading via `code --install-extension`.
+      # If we ever want first-class Open VSX support we'd need to add
+      # back `ovsx create-namespace` + `ovsx publish` steps here plus
+      # an OVSX_PAT secret in the Production environment.
