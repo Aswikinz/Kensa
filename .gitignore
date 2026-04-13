@@ -20,3 +20,6 @@ crates/kensa-engine/npm/
 *.log
 .env
 .env.local
+
+
+.claude/
