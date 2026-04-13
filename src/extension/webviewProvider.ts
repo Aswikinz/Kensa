@@ -281,8 +281,24 @@ export class WebviewProvider implements vscode.Disposable {
         }
 
         case 'previewOperation': {
-          const code = await router.previewOperation(msg.operationId, msg.parameters);
-          this.post(entry, { type: 'operationPreview', code, diff: null });
+          // In viewing mode we can't execute arbitrary Pandas without paying
+          // the cost of spinning up Python, so we transparently switch to
+          // editing mode first. This matches the behavior of applyOperation.
+          if (router.currentMode !== 'editing') {
+            await router.switchMode('editing');
+            this.post(entry, { type: 'modeChanged', mode: router.currentMode });
+            this.post(entry, {
+              type: 'engineStatus',
+              engine: router.currentEngine,
+              ready: true
+            });
+          }
+          const { code, slice } = await router.previewOperation(
+            msg.operationId,
+            msg.parameters
+          );
+          const diff = slice ? computeDiff(entry.lastSlice, slice) : null;
+          this.post(entry, { type: 'operationPreview', code, slice, diff });
           break;
         }
 

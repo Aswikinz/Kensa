@@ -27,7 +27,9 @@ export function App() {
     removeStep,
     setError,
     setFlashFillExpression,
-    setDiff
+    setDiff,
+    setPreview,
+    clearPreview
   } = useKensaStore();
 
   // Single subscription to extension messages; the store absorbs everything.
@@ -52,11 +54,19 @@ export function App() {
           addStep(msg.step);
           setSlice(msg.slice);
           setDiff(msg.diff ?? null);
+          clearPreview();
           break;
         case 'stepRemoved':
           removeStep(msg.stepId);
           setSlice(msg.slice);
           setDiff(null);
+          clearPreview();
+          break;
+        case 'operationPreview':
+          setPreview(msg.slice, msg.diff, msg.code);
+          break;
+        case 'previewCleared':
+          clearPreview();
           break;
         case 'modeChanged':
           setMode(msg.mode);
@@ -85,7 +95,9 @@ export function App() {
     removeStep,
     setError,
     setFlashFillExpression,
-    setDiff
+    setDiff,
+    setPreview,
+    clearPreview
   ]);
 
   return (

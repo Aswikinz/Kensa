@@ -165,12 +165,23 @@ export class DataRouter {
     }
   }
 
-  async previewOperation(operationId: string, params: Record<string, unknown>): Promise<string> {
+  /** Run an operation's generated code against a preview copy of the
+   *  dataframe without committing it. Returns the generated code and, when
+   *  running under Python, a preview slice the webview can overlay as a diff.
+   *  In viewing mode we only return the code (preview requires Python). */
+  async previewOperation(
+    operationId: string,
+    params: Record<string, unknown>
+  ): Promise<{ code: string; slice: DataSlice | null }> {
     const { code } = generateStepCode(operationId, params);
-    if (this.mode === 'viewing') return code;
+    if (this.mode === 'viewing') {
+      return { code, slice: null };
+    }
     const backend = await this.kernelManager.ensureBackend();
-    await backend.previewCode(code);
-    return code;
+    const rawSlice = await backend.previewCode(code);
+    // The Python helper returns a DataSlice-shaped object; stamp it with the
+    // engine tag the webview expects.
+    return { code, slice: { ...rawSlice, engine: 'python' } };
   }
 
   async applyOperation(operationId: string, params: Record<string, unknown>): Promise<OperationStep> {

@@ -41,7 +41,13 @@ export type ExtensionToWebviewMessage =
   | { type: 'dataSlice'; slice: DataSlice }
   | { type: 'columnStats'; columnIndex: number; stats: ColumnStats }
   | { type: 'allColumnInsights'; insights: QuickInsight[] }
-  | { type: 'operationPreview'; code: string; diff: DiffSummary | null }
+  | {
+      type: 'operationPreview';
+      code: string;
+      slice: DataSlice | null;
+      diff: DiffSummary | null;
+    }
+  | { type: 'previewCleared' }
   | {
       type: 'operationApplied';
       step: OperationStep;

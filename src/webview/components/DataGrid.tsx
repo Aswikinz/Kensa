@@ -1,19 +1,29 @@
-// Virtualized data grid. Hand-rolled virtualization instead of a dependency —
-// rows are absolute-positioned inside a large scroll container, and only the
-// visible window + a small overscan buffer is rendered. Horizontal scrolling
-// is native browser scroll on the cells container.
+// Virtualized data grid.
 //
-// Row/column sizing rules:
-//   - Row height is a constant (ROW_HEIGHT).
-//   - Column widths are per-column in `columnWidths` state; drag to resize.
-//   - The header strip is position: sticky so it stays visible during
-//     vertical scrolling.
+// Layout:
+//   .kensa-grid
+//     └── .kensa-grid-scroll      (single scroll container, both axes)
+//           └── .kensa-grid-content
+//                 ├── .kensa-grid-header (position: sticky; top: 0)
+//                 └── .kensa-grid-rows   (height = totalRows * ROW_HEIGHT)
+//                       ├── row N      (position: absolute; top = N * H)
+//                       └── ...
+//
+// Putting the header inside the same scroll container as the rows means a
+// single horizontal scroll naturally moves both — no transform syncing
+// required — and `position: sticky; top: 0` keeps it pinned during vertical
+// scrolling. Only the visible window of rows is rendered; everything else is
+// a cheap absolute-positioned layer.
+//
+// Diff overlay: when a preview is active, the store exposes `previewSlice`
+// and `previewDiff`, which we render in place of the real slice. Cells that
+// changed get `.diff-modified`; newly-added columns get `.diff-added`.
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { ColumnHeader } from './ColumnHeader';
 import { useKensaStore } from '../state/store';
 import { postMessage } from '../vscodeApi';
-import type { DataSlice } from '../../shared/types';
+import type { DataSlice, DiffSummary } from '../../shared/types';
 
 /** Build a Set<"row:col"> from the diff so cell rendering is O(1) per cell. */
 function buildModifiedSet(
@@ -39,16 +49,26 @@ interface DataGridProps {
   readonly slice: DataSlice;
 }
 
-export function DataGrid({ slice }: DataGridProps) {
+export function DataGrid({ slice: baseSlice }: DataGridProps) {
+  // When a preview is active, we render its slice instead of the base one.
+  // Everything downstream (virtualization, column headers) operates on
+  // `slice` so the preview reuses the same layout code paths.
+  const previewSlice = useKensaStore((s) => s.previewSlice);
+  const previewDiff = useKensaStore((s) => s.previewDiff);
+  const appliedDiff = useKensaStore((s) => s.diff);
+  const slice = previewSlice ?? baseSlice;
+  const diff: DiffSummary | null = previewSlice ? previewDiff : appliedDiff;
+
   const scrollRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(400);
+  const [headerHeight, setHeaderHeight] = useState(80);
   const [columnWidths, setColumnWidths] = useState<number[]>(() =>
     slice.columns.map(() => DEFAULT_COL_WIDTH)
   );
   const selectedColumn = useKensaStore((s) => s.selectedColumn);
   const setSelectedColumn = useKensaStore((s) => s.setSelectedColumn);
-  const diff = useKensaStore((s) => s.diff);
   const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null);
 
   const columnIndexByName = useMemo(() => {
@@ -75,44 +95,61 @@ export function DataGrid({ slice }: DataGridProps) {
     );
   }, [slice.columns.length]);
 
-  useEffect(() => {
-    const update = () => {
-      if (scrollRef.current) {
-        setContainerHeight(scrollRef.current.clientHeight);
-      }
+  // Measure the scroll container and the sticky header on every render that
+  // might change their intrinsic sizes (column widths, slice, window size).
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (scrollRef.current) setContainerHeight(scrollRef.current.clientHeight);
+      if (headerRef.current) setHeaderHeight(headerRef.current.offsetHeight);
     };
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, []);
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [slice.columns, columnWidths]);
 
-  // Visible window computation. We lay out all rows (even ones outside the
-  // loaded slice) as a tall spacer so the scrollbar reflects the true total
-  // row count; only rendered rows become actual DOM nodes.
-  const totalHeight = slice.totalRows * ROW_HEIGHT;
-  const sliceOffset = slice.startRow * ROW_HEIGHT;
-  const loadedRows = slice.rows.length;
-
-  const firstVisibleRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  // Vertical virtualization. `scrollTop` is measured relative to the scroll
+  // container, which includes the sticky header's height. The rows container
+  // sits below the header, so to map scrollTop -> a row index we subtract
+  // headerHeight (clamped at zero so we don't go negative when scrolled to
+  // the very top).
+  const rowsScrollOffset = Math.max(0, scrollTop - headerHeight);
+  const visibleRowAreaHeight = Math.max(0, containerHeight - headerHeight);
+  const firstVisibleRow = Math.max(
+    0,
+    Math.floor(rowsScrollOffset / ROW_HEIGHT) - OVERSCAN
+  );
   const lastVisibleRow = Math.min(
     slice.totalRows,
-    Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN
+    Math.ceil((rowsScrollOffset + visibleRowAreaHeight) / ROW_HEIGHT) + OVERSCAN
   );
 
-  // Request a new slice if the user scrolled past the loaded window.
+  // Request a new slice if the user scrolled past the loaded window. We use
+  // the base slice's loaded window because the preview slice is a fixed
+  // snapshot that shouldn't trigger pagination.
+  const loadedStart = previewSlice ? null : baseSlice.startRow;
+  const loadedEnd = previewSlice ? null : baseSlice.startRow + baseSlice.rows.length;
   useEffect(() => {
-    const needsMore =
-      firstVisibleRow < slice.startRow || lastVisibleRow > slice.startRow + loadedRows;
+    if (previewSlice) return;
+    if (loadedStart === null || loadedEnd === null) return;
+    const needsMore = firstVisibleRow < loadedStart || lastVisibleRow > loadedEnd;
     if (!needsMore) return;
     const start = Math.max(0, firstVisibleRow);
     const end = Math.min(slice.totalRows, start + PAGE_SIZE);
     postMessage({ type: 'requestDataSlice', start, end });
-  }, [firstVisibleRow, lastVisibleRow, slice.startRow, slice.totalRows, loadedRows]);
+  }, [
+    firstVisibleRow,
+    lastVisibleRow,
+    loadedStart,
+    loadedEnd,
+    slice.totalRows,
+    previewSlice
+  ]);
 
   const totalColumnWidth = useMemo(
     () => columnWidths.reduce((a, b) => a + b, 0),
     [columnWidths]
   );
+  const totalContentWidth = ROW_NUMBER_WIDTH + totalColumnWidth;
 
   const handleResize = (colIndex: number, newWidth: number) => {
     setColumnWidths((prev) => {
@@ -126,19 +163,19 @@ export function DataGrid({ slice }: DataGridProps) {
   for (let rowIdx = firstVisibleRow; rowIdx < lastVisibleRow; rowIdx++) {
     const localIdx = rowIdx - slice.startRow;
     const row = slice.rows[localIdx];
-    const style: CSSProperties = {
+    const rowStyle: CSSProperties = {
       position: 'absolute',
       top: rowIdx * ROW_HEIGHT,
       left: 0,
-      right: 0,
       height: ROW_HEIGHT,
+      width: totalContentWidth,
       display: 'flex'
     };
     renderRows.push(
       <div
         className={`kensa-row ${rowIdx % 2 ? 'kensa-row-alt' : ''}`}
         key={rowIdx}
-        style={style}
+        style={rowStyle}
       >
         <div
           className="kensa-row-number"
@@ -185,46 +222,59 @@ export function DataGrid({ slice }: DataGridProps) {
     );
   }
 
+  const rowsLayerHeight = slice.totalRows * ROW_HEIGHT;
+
   return (
     <div className="kensa-grid">
-      <div
-        className="kensa-grid-header"
-        style={{ minWidth: ROW_NUMBER_WIDTH + totalColumnWidth }}
-      >
-        <div
-          className="kensa-row-number kensa-row-number-header"
-          style={{ width: ROW_NUMBER_WIDTH, minWidth: ROW_NUMBER_WIDTH }}
-        >
-          #
+      {previewSlice && (
+        <div className="kensa-preview-banner">
+          Previewing changes · {diff?.rowsChanged ?? 0} cells modified,{' '}
+          {diff?.rowsAdded ?? 0} rows added, {diff?.rowsRemoved ?? 0} removed
         </div>
-        {slice.columns.map((col, i) => (
-          <ColumnHeader
-            key={i}
-            column={col}
-            width={columnWidths[i] ?? DEFAULT_COL_WIDTH}
-            onResize={(w) => handleResize(i, w)}
-            selected={selectedColumn === i}
-            onSelect={() => setSelectedColumn(i)}
-          />
-        ))}
-      </div>
-
+      )}
       <div
         ref={scrollRef}
-        className="kensa-grid-body"
+        className="kensa-grid-scroll"
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
       >
         <div
-          className="kensa-grid-body-inner"
-          style={{
-            height: totalHeight,
-            minWidth: ROW_NUMBER_WIDTH + totalColumnWidth,
-            position: 'relative'
-          }}
+          className="kensa-grid-content"
+          style={{ width: totalContentWidth, minWidth: totalContentWidth }}
         >
-          {renderRows}
+          <div
+            ref={headerRef}
+            className="kensa-grid-header"
+            style={{ width: totalContentWidth, minWidth: totalContentWidth }}
+          >
+            <div
+              className="kensa-row-number kensa-row-number-header"
+              style={{ width: ROW_NUMBER_WIDTH, minWidth: ROW_NUMBER_WIDTH }}
+            >
+              #
+            </div>
+            {slice.columns.map((col, i) => (
+              <ColumnHeader
+                key={i}
+                column={col}
+                width={columnWidths[i] ?? DEFAULT_COL_WIDTH}
+                onResize={(w) => handleResize(i, w)}
+                selected={selectedColumn === i}
+                onSelect={() => setSelectedColumn(i)}
+              />
+            ))}
+          </div>
+          <div
+            className="kensa-grid-rows"
+            style={{
+              position: 'relative',
+              height: rowsLayerHeight,
+              width: totalContentWidth,
+              minWidth: totalContentWidth
+            }}
+          >
+            {renderRows}
+          </div>
         </div>
-        {sliceOffset < 0 && <div />}
       </div>
     </div>
   );

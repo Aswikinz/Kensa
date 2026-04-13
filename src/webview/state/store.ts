@@ -16,10 +16,15 @@ import type {
 export interface KensaState {
   // Server state
   slice: DataSlice | null;
+  // When set, the grid renders this slice (a what-if result of the currently
+  // selected operation) instead of `slice`, and the `diff` is overlaid on
+  // the rendered cells. Cleared when the user hits Cancel or Apply.
+  previewSlice: DataSlice | null;
   insights: QuickInsight[];
   statsByColumn: Record<number, ColumnStats>;
   steps: OperationStep[];
   diff: DiffSummary | null;
+  previewDiff: DiffSummary | null;
   mode: EditorMode;
   engine: EngineKind;
   fileName: string;
@@ -37,6 +42,8 @@ export interface KensaState {
 
   // Actions
   setSlice: (slice: DataSlice) => void;
+  setPreview: (slice: DataSlice | null, diff: DiffSummary | null, code: string) => void;
+  clearPreview: () => void;
   setInsights: (insights: QuickInsight[]) => void;
   setColumnStats: (columnIndex: number, stats: ColumnStats) => void;
   setSteps: (steps: OperationStep[]) => void;
@@ -59,10 +66,12 @@ export interface KensaState {
 
 export const useKensaStore = create<KensaState>((set) => ({
   slice: null,
+  previewSlice: null,
   insights: [],
   statsByColumn: {},
   steps: [],
   diff: null,
+  previewDiff: null,
   mode: 'viewing',
   engine: 'rust',
   fileName: '',
@@ -77,7 +86,9 @@ export const useKensaStore = create<KensaState>((set) => ({
   showOperationsPanel: false,
   showCodePreview: false,
 
-  setSlice: (slice) => set({ slice, loading: false, error: null }),
+  setSlice: (slice) => set({ slice, loading: false, error: null, previewSlice: null, previewDiff: null }),
+  setPreview: (slice, diff, code) => set({ previewSlice: slice, previewDiff: diff, previewCode: code }),
+  clearPreview: () => set({ previewSlice: null, previewDiff: null, previewCode: '' }),
   setInsights: (insights) => set({ insights }),
   setColumnStats: (columnIndex, stats) =>
     set((s) => ({ statsByColumn: { ...s.statsByColumn, [columnIndex]: stats } })),
@@ -96,7 +107,8 @@ export const useKensaStore = create<KensaState>((set) => ({
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   setSelectedColumn: (selectedColumn) => set({ selectedColumn }),
-  setSelectedOperation: (selectedOperationId) => set({ selectedOperationId, previewCode: '' }),
+  setSelectedOperation: (selectedOperationId) =>
+    set({ selectedOperationId, previewCode: '', previewSlice: null, previewDiff: null }),
   setPreviewCode: (previewCode) => set({ previewCode }),
   setFlashFillExpression: (columnIndex, expression) =>
     set((s) => ({

@@ -72,27 +72,88 @@ export class PythonBackend {
     this.starting = new Promise((resolve, reject) => {
       const script = path.join(this.extensionRoot, 'src', 'python', 'kensa_helpers.py');
       this.output.appendLine(`[kensa] starting python: ${this.pythonPath} ${script}`);
-      const proc = spawn(this.pythonPath, ['-u', script], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
-      });
+
+      // Accumulate stderr — we replay it in the rejection message so the
+      // user sees Python's actual error (missing module, syntax error, etc.)
+      // instead of a generic "python exited" message.
+      let stderrBuf = '';
+      let settled = false;
+      const settle = (err: Error | null) => {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err);
+        else resolve();
+        this.resolveReady = null;
+      };
+
+      // Hard timeout — if Python never emits the ready line within 15s,
+      // something went wrong (most often: pandas import hung or the script
+      // path is wrong). Better to fail fast than hang the UI.
+      const timeout = setTimeout(() => {
+        this.output.appendLine('[kensa] python start timed out after 15s');
+        try { this.proc?.kill(); } catch { /* ignore */ }
+        settle(new Error(
+          'Python subprocess did not report ready within 15 seconds. ' +
+            (stderrBuf.trim() ? `stderr: ${stderrBuf.trim().split('\n').slice(-5).join(' | ')}` : 'No stderr output.')
+        ));
+      }, 15000);
+
+      let proc: ChildProcess;
+      try {
+        proc = spawn(this.pythonPath, ['-u', script], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+        });
+      } catch (err) {
+        clearTimeout(timeout);
+        const message = err instanceof Error ? err.message : String(err);
+        settle(new Error(`Failed to spawn '${this.pythonPath}': ${message}`));
+        return;
+      }
       this.proc = proc;
-      this.resolveReady = resolve;
+
+      // Wrap the caller's resolve so we can also clear the timeout and flip
+      // the settled flag. Ready-line detection in handleLine() calls the
+      // stored resolveReady — we route through settle() instead.
+      this.resolveReady = () => {
+        clearTimeout(timeout);
+        settle(null);
+      };
+
       proc.stdout?.setEncoding('utf-8');
       proc.stderr?.setEncoding('utf-8');
       proc.stdout?.on('data', (chunk: string) => this.onStdout(chunk));
-      proc.stderr?.on('data', (chunk: string) =>
-        this.output.appendLine(`[kensa:py:stderr] ${chunk.trimEnd()}`)
-      );
+      proc.stderr?.on('data', (chunk: string) => {
+        stderrBuf += chunk;
+        this.output.appendLine(`[kensa:py:stderr] ${chunk.trimEnd()}`);
+      });
       proc.on('error', (err) => {
+        clearTimeout(timeout);
         this.output.appendLine(`[kensa] python process error: ${err.message}`);
-        reject(err);
+        settle(
+          new Error(
+            `Failed to launch Python at '${this.pythonPath}': ${err.message}. ` +
+              "Install Python 3.9+ with pandas, or set the 'kensa.pythonPath' setting."
+          )
+        );
       });
       proc.on('exit', (code, signal) => {
+        clearTimeout(timeout);
         this.output.appendLine(`[kensa] python exited (code=${code}, signal=${signal})`);
         this.proc = null;
         for (const p of this.pending.values()) p.reject(new Error('python process exited'));
         this.pending.clear();
+        // If the process exited before sending "ready", the start promise
+        // is still pending. Reject it with the captured stderr so the user
+        // sees the real error instead of hanging.
+        if (!settled) {
+          const tail = stderrBuf.trim().split('\n').slice(-5).join(' | ') || 'no output';
+          settle(
+            new Error(
+              `Python subprocess exited before becoming ready (code=${code}). ${tail}`
+            )
+          );
+        }
       });
     });
     return this.starting;
