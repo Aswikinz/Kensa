@@ -149,11 +149,8 @@ impl DataEngine {
     #[napi]
     pub fn get_column_stats(&self, col_index: u32) -> Result<ColumnStats> {
         let df = self.require_df()?;
-        let idx = col_index as usize;
-        if idx >= df.columns.len() {
-            return Err(napi_err("column index out of range"));
-        }
-        Ok(stats::column_stats(&df.columns[idx], &df.column_names[idx]))
+        let (col, name) = column_at(df, col_index)?;
+        Ok(stats::column_stats(col, name))
     }
 
     /// Compute quick insights (tiny histogram or frequency bars) for every
@@ -228,22 +225,16 @@ impl DataEngine {
     #[napi]
     pub fn compute_histogram(&self, col_index: u32, bins: u32) -> Result<Vec<HistogramBin>> {
         let df = self.require_df()?;
-        let idx = col_index as usize;
-        if idx >= df.columns.len() {
-            return Err(napi_err("column index out of range"));
-        }
-        Ok(histogram::compute(&df.columns[idx], bins.max(1) as usize))
+        let (col, _) = column_at(df, col_index)?;
+        Ok(histogram::compute(col, bins.max(1) as usize))
     }
 
     /// Top-N value frequency for a column. Works on any column type.
     #[napi]
     pub fn compute_frequency(&self, col_index: u32, top_n: u32) -> Result<Vec<FrequencyEntry>> {
         let df = self.require_df()?;
-        let idx = col_index as usize;
-        if idx >= df.columns.len() {
-            return Err(napi_err("column index out of range"));
-        }
-        Ok(frequency::top_n(&df.columns[idx], top_n as usize))
+        let (col, _) = column_at(df, col_index)?;
+        Ok(frequency::top_n(col, top_n as usize))
     }
 
     /// FlashFill pattern inference. Given input/output example pairs, try to
@@ -256,11 +247,8 @@ impl DataEngine {
         examples: Vec<ExamplePair>,
     ) -> Result<Option<String>> {
         let df = self.require_df()?;
-        let idx = col_index as usize;
-        if idx >= df.columns.len() {
-            return Err(napi_err("column index out of range"));
-        }
-        Ok(flashfill::infer(&df.columns[idx], &examples))
+        let (col, _) = column_at(df, col_index)?;
+        Ok(flashfill::infer(col, &examples))
     }
 
     /// Current file path, if any — used by the TS mode-switching code to hand
@@ -303,11 +291,47 @@ impl DataEngine {
 // -- helpers ------------------------------------------------------------------
 
 impl DataEngine {
+    /// Borrow the currently-loaded `DataFrame` or return a clean napi error.
+    ///
+    /// We deliberately spell out the `match` + `arc.as_ref()` path instead
+    /// of the terser `self.df.as_deref()` — they're semantically identical
+    /// but the explicit form makes the borrow chain obvious to static
+    /// analyzers (including CodeQL's Rust extractor, which was flagging
+    /// the implicit `Arc: Deref` path as a potential dangling reference).
+    /// The returned reference is tied to `&self` for the whole expression,
+    /// which is enforced by the borrow checker — there's no way to observe
+    /// the `Arc` being dropped while this reference is live.
     fn require_df(&self) -> Result<&DataFrame> {
-        self.df
-            .as_deref()
-            .ok_or_else(|| napi_err("no dataset loaded — call load_* first"))
+        match &self.df {
+            Some(arc) => Ok(arc.as_ref()),
+            None => Err(napi_err("no dataset loaded — call load_* first")),
+        }
     }
+}
+
+/// Bounds-checked column access. Returns the column plus its header name
+/// as a pair of references tied to the borrow of `df`.
+///
+/// All four public `#[napi]` methods that take a `col_index: u32` route
+/// through here instead of hand-rolling `if idx >= len { err }; vec[idx]`.
+/// Using `Vec::get` makes it impossible to ever produce a dangling
+/// reference or trigger a panic on out-of-bounds access, even if the
+/// caller passes a wild index from JS. The previous pattern was
+/// equivalent in practice but CodeQL's bounds-check tracking didn't
+/// see the guard and flagged the subsequent index as a potential
+/// invalid-pointer dereference.
+fn column_at<'df>(df: &'df DataFrame, col_index: u32) -> Result<(&'df ColumnData, &'df str)> {
+    let idx = col_index as usize;
+    let col = df
+        .columns
+        .get(idx)
+        .ok_or_else(|| napi_err("column index out of range"))?;
+    let name = df
+        .column_names
+        .get(idx)
+        .map(String::as_str)
+        .ok_or_else(|| napi_err("column index out of range"))?;
+    Ok((col, name))
 }
 
 fn build_info(df: &DataFrame) -> DatasetInfo {
