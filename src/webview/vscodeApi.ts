@@ -37,49 +37,41 @@ export function postMessage(message: WebviewToExtensionMessage): void {
   }
 }
 
-/** Accepted origins for inbound `message` events.
- *
- *  VS Code webviews run in a sandboxed iframe under the `vscode-webview://`
- *  scheme and the extension host's `panel.webview.postMessage` calls arrive
- *  same-origin — so `evt.origin === window.location.origin` is the correct
- *  positive check at runtime. We additionally accept the literal `"null"`
- *  origin string because sandboxed iframes without `allow-same-origin`
- *  report that, and older VS Code versions have been observed to route
- *  messages this way. Any other origin is either a stray cross-frame
- *  postMessage or something hostile, and we drop it silently. */
-function isTrustedOrigin(origin: string): boolean {
-  if (origin === '' || origin === 'null') return true;
-  if (origin === window.location.origin) return true;
-  return false;
-}
-
-/** Shape guard for inbound messages. Every variant of
- *  `ExtensionToWebviewMessage` is a `{ type: string, ... }` discriminated
- *  union, so anything that doesn't parse as an object with a string `type`
- *  is rejected before the handler ever sees it. This is a belt-and-braces
- *  defense on top of the origin check: even a same-origin sender can't
- *  smuggle malformed data through. */
-function isExtensionMessage(data: unknown): data is ExtensionToWebviewMessage {
-  return (
-    typeof data === 'object' &&
-    data !== null &&
-    typeof (data as { type?: unknown }).type === 'string'
-  );
-}
-
 export function onMessage(handler: (msg: ExtensionToWebviewMessage) => void): () => void {
+  // Snapshot the trusted origin once at listener-setup time so the hot
+  // handler path is just a string compare. VS Code webviews run in a
+  // sandboxed iframe under the `vscode-webview://` scheme and the
+  // extension host's `panel.webview.postMessage` calls arrive
+  // same-origin — so `evt.origin === window.location.origin` is the
+  // correct positive check at runtime.
+  const trustedOrigin = window.location.origin;
+
   const wrapped = (evt: MessageEvent) => {
-    // Origin verification — required to satisfy the CodeQL
-    // `js/missing-origin-verification` rule and to provide real
-    // defense-in-depth against stray cross-frame postMessage calls
-    // that might land in this iframe.
-    if (!isTrustedOrigin(evt.origin)) {
+    // IMPORTANT: the origin comparison MUST live inline here and not
+    // be routed through a helper function. CodeQL's data-flow analysis
+    // for `js/missing-origin-verification` does not trace through
+    // user-defined functions — a `isTrustedOrigin(evt.origin)` helper
+    // call looks identical to "no origin check at all" from the
+    // analyzer's perspective, even if the helper is a one-line equality
+    // check. Keeping the comparison inline is what clears the alert.
+    // See: https://codeql.github.com/codeql-query-help/javascript/js-missing-origin-verification/
+    if (evt.origin !== trustedOrigin) {
       return;
     }
-    if (!isExtensionMessage(evt.data)) {
+    // Shape guard: every variant of `ExtensionToWebviewMessage` is a
+    // `{ type: string, ... }` discriminated union. Reject anything that
+    // doesn't parse as an object with a string `type` before the
+    // handler sees it — belt-and-braces in case a same-origin sender
+    // manages to smuggle malformed data through.
+    const data: unknown = evt.data;
+    if (
+      typeof data !== 'object' ||
+      data === null ||
+      typeof (data as { type?: unknown }).type !== 'string'
+    ) {
       return;
     }
-    handler(evt.data);
+    handler(data as ExtensionToWebviewMessage);
   };
   window.addEventListener('message', wrapped);
   return () => window.removeEventListener('message', wrapped);

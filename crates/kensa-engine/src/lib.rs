@@ -158,12 +158,20 @@ impl DataEngine {
     #[napi]
     pub fn get_all_quick_insights(&self) -> Result<Vec<QuickInsight>> {
         let df = self.require_df()?;
-        let names = &df.column_names;
+        // `.zip()` pairs each column with its matching name in lockstep,
+        // eliminating the `names[i]` indexing that the previous version
+        // used. CodeQL's Rust extractor couldn't prove that
+        // `df.column_names.len() == df.columns.len()`, so it flagged the
+        // bare `names[i]` as a potentially out-of-bounds indexing under
+        // `rust/access-invalid-pointer`. Zipping the two parallel
+        // iterators advances them together and removes the index
+        // expression entirely.
         let insights: Vec<QuickInsight> = df
             .columns
             .par_iter()
+            .zip(df.column_names.par_iter())
             .enumerate()
-            .map(|(i, col)| stats::quick_insight(col, &names[i], i as u32))
+            .map(|(i, (col, name))| stats::quick_insight(col, name.as_str(), i as u32))
             .collect();
         Ok(insights)
     }
