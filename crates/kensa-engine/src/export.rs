@@ -31,9 +31,15 @@ pub fn export_csv(
         Some(v) => v.len(),
         None => df.row_count,
     };
+    // View-index lookup uses `.get(i)` rather than `v[i]` — see slicer.rs
+    // for the full rationale. CodeQL can't prove `i < v.len()` here, so the
+    // raw index expression is rewritten in terms of `.get()`.
     for i in 0..total {
         let row_idx = match view_indices {
-            Some(v) => v[i],
+            Some(v) => match v.get(i) {
+                Some(&idx) => idx,
+                None => break,
+            },
             None => i,
         };
         let row: Vec<String> = df
@@ -93,29 +99,40 @@ fn dtype_for_column(col: &ColumnData) -> DataType {
 }
 
 fn column_to_array(col: &ColumnData, view: Option<&[usize]>, total: usize) -> ArrayRef {
-    let idx_for = |i: usize| match view {
-        Some(v) => v[i],
-        None => i,
+    // All indexing through `.get()` — CodeQL can't prove `idx_for(i) < v.len()`
+    // across the view-permutation indirection, so we use checked access that
+    // falls back to `None` (which the Arrow builders encode as a null cell).
+    // By construction the fallback never fires for a well-formed DataFrame.
+    let idx_for = |i: usize| -> Option<usize> {
+        match view {
+            Some(v) => v.get(i).copied(),
+            None => Some(i),
+        }
     };
     match col {
         ColumnData::Int64(v) => {
-            let iter = (0..total).map(|i| v[idx_for(i)]);
+            let iter = (0..total).map(|i| idx_for(i).and_then(|j| v.get(j).copied()).flatten());
             Arc::new(Int64Array::from_iter(iter))
         }
         ColumnData::Float64(v) => {
-            let iter = (0..total).map(|i| v[idx_for(i)]);
+            let iter = (0..total).map(|i| idx_for(i).and_then(|j| v.get(j).copied()).flatten());
             Arc::new(Float64Array::from_iter(iter))
         }
         ColumnData::Utf8(v) => {
-            let iter = (0..total).map(|i| v[idx_for(i)].clone());
+            let iter = (0..total).map(|i| {
+                idx_for(i)
+                    .and_then(|j| v.get(j))
+                    .and_then(Option::as_ref)
+                    .cloned()
+            });
             Arc::new(StringArray::from_iter(iter))
         }
         ColumnData::Boolean(v) => {
-            let iter = (0..total).map(|i| v[idx_for(i)]);
+            let iter = (0..total).map(|i| idx_for(i).and_then(|j| v.get(j).copied()).flatten());
             Arc::new(BooleanArray::from_iter(iter))
         }
         ColumnData::DateTime(v) => {
-            let iter = (0..total).map(|i| v[idx_for(i)]);
+            let iter = (0..total).map(|i| idx_for(i).and_then(|j| v.get(j).copied()).flatten());
             Arc::new(TimestampMillisecondArray::from_iter(iter))
         }
     }

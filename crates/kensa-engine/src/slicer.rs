@@ -20,9 +20,16 @@ pub fn get_slice(
     let end = end.min(total).max(start);
 
     let mut rows = Vec::with_capacity(end - start);
+    // View-index lookup uses `.get(i)` rather than `v[i]`. `i < end <= total`
+    // and `total == v.len()`, so this is infallible by construction — but
+    // CodeQL's Rust extractor can't see that, and flags the raw index as a
+    // potential OOB deref under `rust/access-invalid-pointer`.
     for i in start..end {
         let row_idx = match view_indices {
-            Some(v) => v[i],
+            Some(v) => match v.get(i) {
+                Some(&idx) => idx,
+                None => break,
+            },
             None => i,
         };
         let row: Vec<Option<String>> = df

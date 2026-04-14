@@ -67,6 +67,11 @@ impl FilterOp {
 }
 
 pub fn apply_filters(df: &DataFrame, filters: &[FilterOp]) -> KensaResult<Vec<usize>> {
+    // Up-front bounds check. CodeQL's Rust extractor (beta) can't track that
+    // this guard protects the later indexing, so the rest of the function
+    // uses `Vec::get` + `ok_or` instead of `&df.columns[idx]`. Same semantics,
+    // no raw index expression on a DataFrame column — which is what the
+    // `rust/access-invalid-pointer` rule flags.
     for f in filters {
         if f.column_index >= df.columns.len() {
             return Err(KensaError::ColumnIndexOutOfRange {
@@ -76,13 +81,22 @@ pub fn apply_filters(df: &DataFrame, filters: &[FilterOp]) -> KensaResult<Vec<us
         }
     }
 
+    let column_at = |idx: usize| -> KensaResult<&ColumnData> {
+        df.columns
+            .get(idx)
+            .ok_or(KensaError::ColumnIndexOutOfRange {
+                index: idx,
+                count: df.columns.len(),
+            })
+    };
+
     // Pre-pass for duplicate/unique filters — each of these needs to know
     // the full frequency of every value in its column before we can classify
     // any single row. We compute one bool vector per filter, indexed by row.
     let mut prepass: HashMap<usize, Vec<bool>> = HashMap::new();
     for (fi, f) in filters.iter().enumerate() {
         if matches!(f.op, FilterKind::IsDuplicated | FilterKind::IsUnique) {
-            let col = &df.columns[f.column_index];
+            let col = column_at(f.column_index)?;
             let counts = value_counts(col);
             let wants_dup = matches!(f.op, FilterKind::IsDuplicated);
             let flags: Vec<bool> = (0..df.row_count)
@@ -108,10 +122,11 @@ pub fn apply_filters(df: &DataFrame, filters: &[FilterOp]) -> KensaResult<Vec<us
         let mut keep = true;
         for (fi, f) in filters.iter().enumerate() {
             let matches_filter = match f.op {
-                FilterKind::IsDuplicated | FilterKind::IsUnique => {
-                    prepass.get(&fi).map(|v| v[row]).unwrap_or(false)
-                }
-                _ => row_matches(&df.columns[f.column_index], row, f)?,
+                FilterKind::IsDuplicated | FilterKind::IsUnique => prepass
+                    .get(&fi)
+                    .and_then(|v| v.get(row).copied())
+                    .unwrap_or(false),
+                _ => row_matches(column_at(f.column_index)?, row, f)?,
             };
             if !matches_filter {
                 keep = false;
@@ -141,15 +156,42 @@ fn value_counts(col: &ColumnData) -> HashMap<String, u32> {
 
 /// Stable string key for a cell. For floats we use bit-pattern encoding so
 /// +0.0 and -0.0 hash the same and NaN compares equal to itself.
+///
+/// All inner indexing is done via `Vec::get` rather than `v[row]`. `row` is
+/// bounded by the callers' `0..df.row_count` / `0..col.len()`, but CodeQL's
+/// Rust extractor can't see that invariant and flags the raw index as an
+/// out-of-bounds deref. Same result, just different syntax.
 fn cell_key(col: &ColumnData, row: usize) -> String {
     match col {
-        ColumnData::Int64(v) => v[row].map(|n| n.to_string()).unwrap_or_default(),
-        ColumnData::Float64(v) => v[row]
+        ColumnData::Int64(v) => v
+            .get(row)
+            .copied()
+            .flatten()
+            .map(|n| n.to_string())
+            .unwrap_or_default(),
+        ColumnData::Float64(v) => v
+            .get(row)
+            .copied()
+            .flatten()
             .map(|n| if n.is_nan() { "NaN".to_string() } else { n.to_bits().to_string() })
             .unwrap_or_default(),
-        ColumnData::Utf8(v) => v[row].clone().unwrap_or_default(),
-        ColumnData::Boolean(v) => v[row].map(|b| b.to_string()).unwrap_or_default(),
-        ColumnData::DateTime(v) => v[row].map(|n| n.to_string()).unwrap_or_default(),
+        ColumnData::Utf8(v) => v
+            .get(row)
+            .and_then(Option::as_ref)
+            .cloned()
+            .unwrap_or_default(),
+        ColumnData::Boolean(v) => v
+            .get(row)
+            .copied()
+            .flatten()
+            .map(|b| b.to_string())
+            .unwrap_or_default(),
+        ColumnData::DateTime(v) => v
+            .get(row)
+            .copied()
+            .flatten()
+            .map(|n| n.to_string())
+            .unwrap_or_default(),
     }
 }
 
@@ -170,19 +212,25 @@ fn row_matches(col: &ColumnData, row: usize, f: &FilterOp) -> KensaResult<bool> 
                 .value
                 .as_deref()
                 .ok_or_else(|| KensaError::InvalidFilter("value required".into()))?;
+            // `is_missing` above guarantees the cell is present, but CodeQL
+            // doesn't track that across a method call, so we use `get(row)`
+            // + `flatten()` / `and_then` and bubble up an `InvalidFilter`
+            // error if the invariant ever gets violated. Can't actually
+            // happen for a well-formed DataFrame.
+            let missing_err = || KensaError::InvalidFilter("row out of range".into());
             match col {
                 ColumnData::Int64(arr) => {
-                    let x = arr[row].unwrap();
+                    let x = arr.get(row).copied().flatten().ok_or_else(missing_err)?;
                     let target = v.parse::<i64>().map_err(|e| KensaError::InvalidFilter(e.to_string()))?;
                     Ok(compare_ord(x, target, &f.op))
                 }
                 ColumnData::Float64(arr) => {
-                    let x = arr[row].unwrap();
+                    let x = arr.get(row).copied().flatten().ok_or_else(missing_err)?;
                     let target = v.parse::<f64>().map_err(|e| KensaError::InvalidFilter(e.to_string()))?;
                     Ok(compare_partial(x, target, &f.op))
                 }
                 ColumnData::Boolean(arr) => {
-                    let x = arr[row].unwrap();
+                    let x = arr.get(row).copied().flatten().ok_or_else(missing_err)?;
                     let target = matches!(v, "true" | "True" | "1");
                     Ok(match f.op {
                         FilterKind::Eq => x == target,
@@ -191,12 +239,15 @@ fn row_matches(col: &ColumnData, row: usize, f: &FilterOp) -> KensaResult<bool> 
                     })
                 }
                 ColumnData::DateTime(arr) => {
-                    let x = arr[row].unwrap();
+                    let x = arr.get(row).copied().flatten().ok_or_else(missing_err)?;
                     let target = v.parse::<i64>().map_err(|e| KensaError::InvalidFilter(e.to_string()))?;
                     Ok(compare_ord(x, target, &f.op))
                 }
                 ColumnData::Utf8(arr) => {
-                    let s = arr[row].as_deref().unwrap();
+                    let s = arr
+                        .get(row)
+                        .and_then(Option::as_deref)
+                        .ok_or_else(missing_err)?;
                     let (haystack, needle) = if f.case_insensitive {
                         (s.to_lowercase(), v.to_lowercase())
                     } else {

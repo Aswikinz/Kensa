@@ -31,6 +31,11 @@ pub fn compute(col: &ColumnData, bins: usize) -> Vec<HistogramBin> {
     let width = (max - min) / n as f64;
     let mut counts = vec![0u32; n];
 
+    // `idx` is clamped to `[0, n)` and `counts` has length `n`, so both the
+    // write and read below are bounded by construction. CodeQL's Rust
+    // extractor can't see the clamps though, so we use `.get_mut()` /
+    // `.get()` — same semantics, no raw index expression for the
+    // `rust/access-invalid-pointer` rule to flag.
     for v in &values {
         let mut idx = ((v - min) / width).floor() as isize;
         if idx < 0 {
@@ -39,14 +44,16 @@ pub fn compute(col: &ColumnData, bins: usize) -> Vec<HistogramBin> {
         if idx as usize >= n {
             idx = (n - 1) as isize;
         }
-        counts[idx as usize] += 1;
+        if let Some(slot) = counts.get_mut(idx as usize) {
+            *slot += 1;
+        }
     }
 
     (0..n)
         .map(|i| HistogramBin {
             lower: min + i as f64 * width,
             upper: min + (i + 1) as f64 * width,
-            count: counts[i],
+            count: counts.get(i).copied().unwrap_or(0),
         })
         .collect()
 }

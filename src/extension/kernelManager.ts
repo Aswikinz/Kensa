@@ -89,6 +89,27 @@ export class KernelManager {
    *  `notebookHint`, when provided, pins the lookup to that exact notebook
    *  (used when the command is invoked from a notebook toolbar button). */
   async extractVariableToPickle(variableName: string, notebookHint?: vscode.Uri): Promise<string> {
+    // `variableName` flows here from user-triggered paths (command palette
+    // input, notebook-renderer postMessage). We must not substitute it into
+    // Python source as code — an attacker-controlled name like
+    // `__import__('os').system('rm -rf /')` would run in the kernel.
+    //
+    // Fix: up-front allowlist validation + no `eval()`. We split on `.`,
+    // validate each segment as a plain Python identifier, then walk the
+    // attribute chain with explicit `globals()`/`locals()` lookups and
+    // `getattr` in the kernel code. The validated parts are still embedded
+    // as *data* via `JSON.stringify` (a JSON string array becomes a Python
+    // list literal), so the Python we run no longer constructs any code
+    // from user input and CodeQL's `js/build-code-injection` rule has
+    // nothing to flag.
+    const parts = variableName.split('.');
+    const identPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+    if (parts.length === 0 || !parts.every((p) => identPattern.test(p))) {
+      throw new Error(
+        `'${variableName}' is not a valid Python variable name. Use a plain identifier or dotted attribute path like 'df' or 'obj.df'.`
+      );
+    }
+
     const api = await this.getJupyterApi();
     if (!api) {
       throw new Error(
@@ -129,12 +150,26 @@ export class KernelManager {
       `kensa-var-${Date.now()}-${Math.random().toString(36).slice(2)}.pkl`
     );
 
+    // `parts` is embedded as a JSON literal, which is also a valid Python
+    // list-of-strings literal — so the kernel sees a data value, not code
+    // compiled from a template. The lookup walks globals/locals for the
+    // first segment and `getattr` for each remaining segment.
+    const partsLiteral = JSON.stringify(parts);
     const code = [
       'import json as _kensa_json',
       'import pickle as _kensa_pickle',
       '_kensa_status = {"ok": False, "reason": None}',
+      `_kensa_parts = ${partsLiteral}`,
       'try:',
-      `    _kensa_v = eval(${JSON.stringify(variableName)}, globals(), locals())`,
+      '    _kensa_head = _kensa_parts[0]',
+      '    if _kensa_head in locals():',
+      '        _kensa_v = locals()[_kensa_head]',
+      '    elif _kensa_head in globals():',
+      '        _kensa_v = globals()[_kensa_head]',
+      '    else:',
+      '        raise NameError(_kensa_head)',
+      '    for _kensa_p in _kensa_parts[1:]:',
+      '        _kensa_v = getattr(_kensa_v, _kensa_p)',
       '    _kensa_t = type(_kensa_v)',
       '    _kensa_mod = getattr(_kensa_t, "__module__", "") or ""',
       '    _kensa_name = getattr(_kensa_t, "__name__", "") or ""',
