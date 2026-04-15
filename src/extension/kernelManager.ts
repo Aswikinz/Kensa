@@ -62,24 +62,28 @@ export class KernelManager {
     return ext.exports as JupyterApi;
   }
 
-  /** Find a notebook the user is probably working in. Prefers an explicit
-   *  hint (from the notebook toolbar command arg) over all heuristics.
-   *  The command palette steals focus, so `activeNotebookEditor` is
-   *  unreliable — we widen the search to all visible notebook editors and
-   *  finally to any open notebook document. Returns null if nothing is open. */
+  /** Find a notebook the user is probably working in. An explicit hint from
+   *  the notebook toolbar command is authoritative — if it's given and the
+   *  notebook is still open, we pin to it; if it's given but the notebook
+   *  was closed, we return null so the caller fails with a clear error
+   *  instead of silently retargeting another notebook.
+   *
+   *  With no hint (command palette invocation), we fall back to the active
+   *  or visible editor but never to `notebookDocuments[0]` — that list is
+   *  ordered by open-time, so the oldest notebook always won, which was
+   *  the root cause of the "No kernel is attached to <previous notebook>"
+   *  bug when the user switched notebooks. */
   private findWorkingNotebook(hint?: vscode.Uri): vscode.NotebookDocument | null {
     if (hint) {
       const match = vscode.workspace.notebookDocuments.find(
         (d) => d.uri.toString() === hint.toString()
       );
-      if (match) return match;
+      return match ?? null;
     }
     const active = vscode.window.activeNotebookEditor?.notebook;
     if (active) return active;
     const visible = vscode.window.visibleNotebookEditors;
     if (visible.length > 0) return visible[0]?.notebook ?? null;
-    const open = vscode.workspace.notebookDocuments;
-    if (open.length > 0) return open[0] ?? null;
     return null;
   }
 
@@ -119,6 +123,11 @@ export class KernelManager {
 
     const notebook = this.findWorkingNotebook(notebookHint);
     if (!notebook) {
+      if (notebookHint) {
+        throw new Error(
+          `The notebook '${path.basename(notebookHint.fsPath)}' is no longer open. Re-open it and try again, or use "Kensa: Open Variable" from the command palette against the currently focused notebook.`
+        );
+      }
       throw new Error(
         'No Jupyter notebook is open. Open an .ipynb notebook, execute at least one cell that defines your DataFrame, then retry.'
       );

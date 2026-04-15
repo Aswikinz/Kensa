@@ -104,7 +104,14 @@ export class WebviewProvider implements vscode.Disposable {
   }
 
   async openNotebookVariable(name: string, notebookHint?: vscode.Uri): Promise<void> {
-    const key = `variable:${name}`;
+    // Include the source notebook in the panel key so `df` from notebook A
+    // and `df` from notebook B don't collide onto a single panel. Previously
+    // the key was just `variable:${name}`, which meant opening `df` from a
+    // second notebook silently reused the first notebook's panel, threw
+    // away the new hint, and any refresh the reused panel did pointed at
+    // the wrong kernel — surfacing as "No kernel is attached to <previous
+    // notebook>" with the new dataframe never loading.
+    const key = `variable:${name}:${notebookHint?.toString() ?? '_unknown'}`;
     const existing = this.panels.get(key);
     if (existing) {
       existing.panel.reveal(vscode.ViewColumn.Active);

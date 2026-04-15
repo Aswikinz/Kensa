@@ -4,6 +4,27 @@ All notable changes to Kensa are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Kensa follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] — 2026-04-15
+
+### Fixed
+
+- **Notebook-variable panel now tracks the source notebook.** Opening `df`
+  from a second notebook used to silently reuse the first notebook's Kensa
+  panel and drop the new hint — the panel would then refresh against the
+  original notebook's kernel and surface a confusing "No kernel is attached
+  to <previous notebook>" error without ever loading the new dataframe.
+  The panel cache key now includes the notebook URI, so each `(variable,
+  notebook)` pair gets its own panel.
+- **`findWorkingNotebook` no longer silently retargets a closed notebook.**
+  When the notebook-toolbar hint pointed at a notebook that had been
+  closed, the helper used to fall through to `notebookDocuments[0]` — the
+  first-ever-opened notebook in the session, which was almost always the
+  wrong one. The fallback is removed; a stale hint now fails with a clear
+  `"The notebook 'foo.ipynb' is no longer open"` error that tells the user
+  exactly what happened. The hint-less command-palette path still walks
+  `activeNotebookEditor` → visible editors, which is the correct
+  behaviour.
+
 ## [0.1.3] — 2026-04-15
 
 ### Security
@@ -234,6 +255,7 @@ First public release (never reached the marketplace — see 0.1.1).
 
 ---
 
+[0.1.4]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.4
 [0.1.3]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.3
 [0.1.1]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.0
