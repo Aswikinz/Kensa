@@ -52,3 +52,8 @@ agent-prompt.md
 # Maps + incremental build caches
 **/*.map
 **/*.tsbuildinfo
+
+# Coverage reports (generated locally + by CI, never shipped)
+coverage/**
+.nyc_output/**
+codecov.yml

@@ -23,18 +23,24 @@ export interface NotebookEditorLike {
  *       the notebook toolbar are authoritative.
  *    2. Loose `uri.fsPath` match — URI serialization can differ between
  *       what the toolbar passes us and what `notebookDocuments` stores
- *       (different scheme, encoding, cell fragment, etc.). This forgiving
- *       path is what was missing in v0.1.4 and broke every notebook flow
- *       whose hint URI didn't serialize identically.
+ *       (different scheme, encoding, cell fragment, etc.).
  *    3. Fall through to the active notebook editor, then to any visible
- *       notebook editor. The hint is a preference, not a constraint —
- *       hard-failing on a miss is worse than picking a reasonable default.
- *    4. Never fall back to `notebookDocuments[0]`: that list is ordered
- *       by open-time, so the oldest notebook always won, which was the
- *       original "No kernel is attached to <previous notebook>" bug.
+ *       notebook editor. The hint is a preference, not a constraint.
+ *    4. Last-resort fallback: if at least one notebook document exists
+ *       but none of the above matched, return the first one. This
+ *       scenario happens when the Kensa webview has stolen focus from
+ *       the notebook (so `activeNotebookEditor` is undefined) AND the
+ *       notebook is in a tab group that's currently hidden (so
+ *       `visibleNotebookEditors` is empty) AND no hint was provided.
+ *       Returning `null` here produced the "No Jupyter notebook is open"
+ *       error in v0.1.5 even with a notebook open; returning something
+ *       reasonable is strictly better. The panel-key fix in
+ *       `webviewProvider.ts` prevents this from cascading into the
+ *       original cross-notebook confusion.
  *
- *  Returns `null` if none of the fallbacks apply. Callers are expected to
- *  surface a clear error in that case. */
+ *  Returns `null` only when there are genuinely no open notebook documents
+ *  at all — which is the one and only case where "No Jupyter notebook is
+ *  open" is the correct error to show the user. */
 export function pickWorkingNotebook<
   N extends NotebookDocumentLike,
   E extends NotebookEditorLike & { readonly notebook: N }
@@ -56,7 +62,14 @@ export function pickWorkingNotebook<
   if (activeEditor) return activeEditor.notebook;
   if (visibleEditors.length > 0) {
     const first = visibleEditors[0];
-    return first ? first.notebook : null;
+    if (first) return first.notebook;
+  }
+  // Last resort: at least one notebook is open but we can't tell which
+  // one the user means. Return the first rather than bailing out —
+  // "wrong notebook, please switch" is a recoverable UX; "no notebook
+  // open" when a notebook is clearly open is not.
+  if (notebookDocuments.length > 0) {
+    return notebookDocuments[0] ?? null;
   }
   return null;
 }

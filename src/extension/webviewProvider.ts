@@ -104,6 +104,9 @@ export class WebviewProvider implements vscode.Disposable {
   }
 
   async openNotebookVariable(name: string, notebookHint?: vscode.Uri): Promise<void> {
+    this.output.appendLine(
+      `[kensa:wv] openNotebookVariable name='${name}' hint=${notebookHint?.toString() ?? '<none>'}`
+    );
     // Include the source notebook in the panel key so `df` from notebook A
     // and `df` from notebook B don't collide onto a single panel. Previously
     // the key was just `variable:${name}`, which meant opening `df` from a

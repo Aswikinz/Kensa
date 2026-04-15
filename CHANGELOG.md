@@ -4,6 +4,59 @@ All notable changes to Kensa are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Kensa follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] — 2026-04-15
+
+### Fixed
+
+- **Second regression of the same symptom: "No Jupyter notebook is open"
+  even with a notebook open.** The 0.1.5 fix only handled the case where
+  the resolver ran with no hint and no active editor. Two remaining
+  bugs kept reproducing the same error for real users:
+
+  1. **`extractNotebookUri` in `commands.ts` used `instanceof vscode.Uri`**
+     to sniff the argument the `notebook/toolbar` command receives. That
+     check silently returned `undefined` whenever the runtime Uri object
+     didn't match the specific `vscode.Uri` class identity the extension
+     host had loaded — which happens when the object comes through an
+     RPC boundary, or is a plain structural clone, or arrives from a
+     downstream VS Code fork. The hint was dropped here, and every
+     notebook flow downstream fell back to the (also-broken) no-hint
+     heuristic. Replaced with a structural duck-type check
+     (`scheme` + `fsPath`/`path`) in a new dedicated helper module
+     [src/extension/notebookArgParser.ts](src/extension/notebookArgParser.ts).
+
+  2. **`pickWorkingNotebook` returned `null` when both
+     `activeNotebookEditor` and `visibleNotebookEditors` were empty**
+     even if notebook documents were clearly open. This combination
+     happens all the time in practice: the Kensa webview panel steals
+     `activeNotebookEditor`, and if the notebook is in a hidden tab
+     group the visible editors list is also empty. Added a last-resort
+     fallback that returns the first open notebook when we reach the
+     end of the preference chain. The panel-key fix from 0.1.4 prevents
+     this from cascading into cross-notebook confusion — at worst the
+     user sees data from a different notebook than they meant and can
+     switch, instead of the extension looking completely broken.
+
+  `null` is now only returned in the single case where
+  `notebookDocuments` is genuinely empty, which is the one and only
+  case where "No Jupyter notebook is open" is the correct error.
+
+### Tests
+
+- New unit test file `test/shared/notebookArgParser.test.ts` with 15
+  cases covering every documented notebook-toolbar argument shape
+  (bare Uri, `{uri}`, `{notebookUri}`, `{notebook: {uri}}`,
+  `{document: {uri}}`) plus structural edge cases. The
+  `isUriLike(plain Uri-shaped object) === true` case specifically
+  guards against the v0.1.5 `instanceof`-based drop.
+- Expanded `test/shared/notebookResolver.test.ts` with regression
+  cases for the "webview stole focus + notebook in hidden tab group"
+  scenario that kept producing the user-facing bug. The test
+  `regression: hint miss + webview stole focus + tab group hidden →
+  still works` end-to-end reconstructs the failure and pins the new
+  fallback behaviour.
+- TS test count: 51 (was 35).
+
 ## [0.1.5] — 2026-04-15
 
 ### Fixed
@@ -312,6 +365,7 @@ First public release (never reached the marketplace — see 0.1.1).
 
 ---
 
+[0.1.6]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.6
 [0.1.5]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.5
 [0.1.4]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.4
 [0.1.3]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.3

@@ -63,10 +63,45 @@ export class KernelManager {
     return ext.exports as JupyterApi;
   }
 
-  /** Find a notebook the user is probably working in. See `pickWorkingNotebook`
-   *  for the full policy — this is a thin wrapper that reads the vscode API
-   *  so the pure logic can be unit-tested without stubbing the whole
-   *  `vscode` module. */
+  /** Resolve a notebook hint to a concrete open `NotebookDocument`, logging
+   *  the full decision to the output channel. Callers should use this at
+   *  the start of a flow to get a stable notebook reference, then pass
+   *  `notebook.uri` to every subsequent `extractVariableToPickle` /
+   *  `listDataFrameVariables` call — that way the downstream resolver
+   *  strict-matches against a URI that came from `notebookDocuments`
+   *  directly, removing any drift between calls.
+   *
+   *  This fixes the "variable not defined in the kernel" symptom that
+   *  hit when the list call resolved to notebook B but the extract call
+   *  re-resolved to notebook A because VS Code state had shifted
+   *  (focus moved, visible editors changed, etc.) between the two calls. */
+  resolveNotebookDocument(hint?: vscode.Uri): vscode.NotebookDocument | null {
+    const docs = vscode.workspace.notebookDocuments;
+    const active = vscode.window.activeNotebookEditor;
+    const visible = vscode.window.visibleNotebookEditors;
+    this.output.appendLine(
+      `[kensa:resolve] hint=${hint?.toString() ?? '<none>'}`
+    );
+    this.output.appendLine(
+      `[kensa:resolve] docs=[${docs.map((d) => d.uri.toString()).join(', ') || '<empty>'}]`
+    );
+    this.output.appendLine(
+      `[kensa:resolve] active=${active?.notebook.uri.toString() ?? '<none>'}`
+    );
+    this.output.appendLine(
+      `[kensa:resolve] visible=[${visible.map((e) => e.notebook.uri.toString()).join(', ') || '<empty>'}]`
+    );
+    const picked = pickWorkingNotebook(hint, docs, active, visible);
+    this.output.appendLine(
+      `[kensa:resolve] picked=${picked?.uri.toString() ?? '<null>'}`
+    );
+    return picked;
+  }
+
+  /** Legacy private wrapper — kept because `extractVariableToPickle` and
+   *  `listDataFrameVariables` still call it internally. New call sites
+   *  should prefer `resolveNotebookDocument` and pass the resolved
+   *  `notebook.uri` as the hint so subsequent lookups strict-match. */
   private findWorkingNotebook(hint?: vscode.Uri): vscode.NotebookDocument | null {
     return pickWorkingNotebook(
       hint,
@@ -110,12 +145,18 @@ export class KernelManager {
       );
     }
 
+    this.output.appendLine(
+      `[kensa:extract] variableName='${variableName}' hint=${notebookHint?.toString() ?? '<none>'}`
+    );
     const notebook = this.findWorkingNotebook(notebookHint);
     if (!notebook) {
       throw new Error(
         'No Jupyter notebook is open. Open an .ipynb notebook, execute at least one cell that defines your DataFrame, then retry.'
       );
     }
+    this.output.appendLine(
+      `[kensa:extract] resolved notebook=${notebook.uri.toString()}`
+    );
 
     const getKernel = api.kernels?.getKernel ?? api.getKernel;
     if (!getKernel) {
@@ -234,16 +275,22 @@ export class KernelManager {
    *  read from the extension host. Returns [] if no kernel / notebook is
    *  attached or the kernel doesn't have pandas. */
   async listDataFrameVariables(notebookHint?: vscode.Uri): Promise<string[]> {
+    this.output.appendLine(
+      `[kensa:list] hint=${notebookHint?.toString() ?? '<none>'}`
+    );
     const api = await this.getJupyterApi();
     if (!api) {
-      this.output.appendLine('[kensa] Jupyter API unavailable — cannot list variables');
+      this.output.appendLine('[kensa:list] Jupyter API unavailable — cannot list variables');
       return [];
     }
     const notebook = this.findWorkingNotebook(notebookHint);
     if (!notebook) {
-      this.output.appendLine('[kensa] no open notebook — cannot list variables');
+      this.output.appendLine('[kensa:list] no open notebook — cannot list variables');
       return [];
     }
+    this.output.appendLine(
+      `[kensa:list] resolved notebook=${notebook.uri.toString()}`
+    );
 
     const getKernel = api.kernels?.getKernel ?? api.getKernel;
     if (!getKernel) return [];

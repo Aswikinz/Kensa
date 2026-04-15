@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { KernelManager } from './kernelManager';
 import { WebviewProvider } from './webviewProvider';
 import { SUPPORTED_EXTENSIONS } from './fileHandler';
+import { extractNotebookHint } from './notebookArgParser';
 
 export function registerCommands(
   context: vscode.ExtensionContext,
@@ -41,7 +42,19 @@ export function registerCommands(
       placeHolder: 'df'
     });
     if (!name) return;
-    await webviewProvider.openNotebookVariable(name);
+    // Resolve the notebook once up front so the downstream probe + real
+    // extraction share the exact same URI and can't drift onto a
+    // different notebook between calls.
+    const km = new KernelManager(context.extensionPath, output);
+    const notebook = km.resolveNotebookDocument(undefined);
+    await km.dispose();
+    if (!notebook) {
+      vscode.window.showErrorMessage(
+        'Kensa: no Jupyter notebook is currently open. Open an .ipynb notebook, run a cell that defines your DataFrame, then try again.'
+      );
+      return;
+    }
+    await webviewProvider.openNotebookVariable(name, notebook.uri);
   });
 
   // Notebook toolbar entry point: discover DataFrame variables in the active
@@ -50,10 +63,32 @@ export function registerCommands(
   // nothing (when invoked from the command palette). We feed that hint to
   // the KernelManager so it doesn't have to guess.
   reg('kensa.viewDataFromNotebook', async (...args: unknown[]) => {
-    const hint = extractNotebookUri(args[0]);
+    const hint = extractNotebookHint(args[0]);
+    output.appendLine(
+      `[kensa:cmd] viewDataFromNotebook argShape=${describeArg(args[0])} ` +
+        `extractedHint=${hint?.toString() ?? '<none>'}`
+    );
     const km = new KernelManager(context.extensionPath, output);
     try {
-      const variables = await km.listDataFrameVariables(hint);
+      // Resolve the notebook ONCE at the top. Everything downstream —
+      // listDataFrameVariables, the probe extractVariableToPickle, and
+      // the router's real extract call — receives `notebook.uri` as the
+      // hint. Because that URI came straight out of
+      // `vscode.workspace.notebookDocuments`, the subsequent strict-match
+      // lookups are guaranteed to return the same notebook. This
+      // eliminates the "list ran against B but extract ran against A"
+      // drift that caused the `variable not defined in the kernel: X`
+      // symptom when switching notebooks.
+      const notebook = km.resolveNotebookDocument(hint);
+      if (!notebook) {
+        vscode.window.showErrorMessage(
+          'Kensa: no Jupyter notebook is currently open. Open an .ipynb notebook, run a cell that defines your DataFrame, then try again.'
+        );
+        return;
+      }
+      const resolvedHint = notebook.uri;
+
+      const variables = await km.listDataFrameVariables(resolvedHint);
       if (variables.length === 0) {
         const choice = await vscode.window.showWarningMessage(
           'Kensa: no DataFrame variables found in the active kernel. Have you executed a cell that defines your DataFrame yet?',
@@ -66,7 +101,7 @@ export function registerCommands(
           placeHolder: 'df'
         });
         if (!typed) return;
-        await webviewProvider.openNotebookVariable(typed, hint);
+        await webviewProvider.openNotebookVariable(typed, resolvedHint);
         return;
       }
 
@@ -78,7 +113,7 @@ export function registerCommands(
         }
       );
       if (!pick) return;
-      await webviewProvider.openNotebookVariable(pick.label, hint);
+      await webviewProvider.openNotebookVariable(pick.label, resolvedHint);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       vscode.window.showErrorMessage(`Kensa: ${message}`);
@@ -103,18 +138,14 @@ export function registerCommands(
   output.appendLine('[kensa] commands registered');
 }
 
-/** Best-effort extraction of a notebook URI from whatever argument VS Code
- *  passes to a notebook/toolbar command. Different VS Code versions pass
- *  different things (NotebookEditor, NotebookDocument, {notebookUri}, or
- *  nothing at all), so we probe each known shape. */
-function extractNotebookUri(arg: unknown): vscode.Uri | undefined {
-  if (!arg || typeof arg !== 'object') return undefined;
-  const obj = arg as Record<string, unknown>;
-  if (obj.uri instanceof vscode.Uri) return obj.uri;
-  if (obj.notebookUri instanceof vscode.Uri) return obj.notebookUri;
-  const notebook = obj.notebook as { uri?: vscode.Uri } | undefined;
-  if (notebook?.uri instanceof vscode.Uri) return notebook.uri;
-  const document = obj.document as { uri?: vscode.Uri } | undefined;
-  if (document?.uri instanceof vscode.Uri) return document.uri;
-  return undefined;
+/** Short summary of whatever VS Code passed as arg[0] to a notebook/toolbar
+ *  command. Lets the output channel record the *shape* of the argument
+ *  without dumping the whole object graph when we're diagnosing a
+ *  resolver bug. */
+function describeArg(arg: unknown): string {
+  if (arg === undefined) return 'undefined';
+  if (arg === null) return 'null';
+  if (typeof arg !== 'object') return typeof arg;
+  const keys = Object.keys(arg as Record<string, unknown>).slice(0, 6);
+  return `{${keys.join(',')}}`;
 }

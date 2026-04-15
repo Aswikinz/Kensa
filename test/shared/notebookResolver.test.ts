@@ -114,18 +114,34 @@ test('no hint, no active editor, visible editor present → returns first visibl
   assert.strictEqual(picked, b);
 });
 
-test('no hint, no active, no visible → returns null', () => {
-  // Pre-v0.1.4 fallback was `notebookDocuments[0]` — that was the original
-  // "picks the first-ever-opened notebook" bug. We now return null and let
-  // the caller surface a clear error instead of silently retargeting.
-  const stale = nb('/work/stale.ipynb');
+test('no hint, no active, no visible, one notebook open → returns that notebook', () => {
+  // v0.1.6 regression fix: the Kensa webview can steal `activeNotebookEditor`
+  // and the notebook can be in a hidden tab group, leaving both active and
+  // visible empty. Returning `null` here (v0.1.5 behaviour) produced the
+  // "No Jupyter notebook is open" error even with a notebook clearly open.
+  const open = nb('/work/open.ipynb');
   const picked = pickWorkingNotebook(
     undefined,
-    [stale],
+    [open],
     undefined,
     []
   );
-  assert.strictEqual(picked, null);
+  assert.strictEqual(picked, open);
+});
+
+test('no hint, no active, no visible, multiple notebooks open → returns first as last resort', () => {
+  // Ambiguous — we can't guess which one the user wants. Picking the first
+  // is strictly better than bailing out, because the panel-key fix in
+  // webviewProvider.ts prevents cross-notebook panel reuse confusion.
+  const a = nb('/work/a.ipynb');
+  const b = nb('/work/b.ipynb');
+  const picked = pickWorkingNotebook(
+    undefined,
+    [a, b],
+    undefined,
+    []
+  );
+  assert.strictEqual(picked, a);
 });
 
 test('hint matches but active editor is different → hint wins', () => {
@@ -141,11 +157,13 @@ test('hint matches but active editor is different → hint wins', () => {
 });
 
 test('empty notebookDocuments, no editors → returns null', () => {
+  // This is the one case where "No Jupyter notebook is open" is the
+  // genuinely correct error. Nothing is open, so nothing can be picked.
   const picked = pickWorkingNotebook(undefined, [], undefined, []);
   assert.strictEqual(picked, null);
 });
 
-test('empty notebookDocuments with a hint → falls through to null', () => {
+test('empty notebookDocuments with a hint → still returns null', () => {
   const picked = pickWorkingNotebook(
     uri('/work/a.ipynb'),
     [],
@@ -153,4 +171,22 @@ test('empty notebookDocuments with a hint → falls through to null', () => {
     []
   );
   assert.strictEqual(picked, null);
+});
+
+test('regression: hint miss + webview stole focus + tab group hidden → still works', () => {
+  // End-to-end reconstruction of the v0.1.5 bug report. User has a notebook
+  // open, clicks "Kensa: Open Variable" from the command palette while
+  // focused on the Kensa webview, which makes `activeNotebookEditor` null
+  // and `visibleNotebookEditors` empty (notebook is in a hidden split).
+  // v0.1.5 returned null and surfaced "No Jupyter notebook is open".
+  // v0.1.6 finds the notebook via the last-resort fallback.
+  const openNotebook = nb('/work/analysis.ipynb');
+  const picked = pickWorkingNotebook(
+    undefined,
+    [openNotebook],
+    undefined,
+    []
+  );
+  assert.ok(picked, 'should not return null when a notebook is clearly open');
+  assert.strictEqual(picked, openNotebook);
 });
