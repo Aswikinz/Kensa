@@ -4,6 +4,37 @@ All notable changes to Kensa are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Kensa follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] — 2026-04-15
+
+### Security
+
+- Closed CodeQL `rust/access-invalid-pointer` across the Rust engine.
+  Every raw `&df.columns[idx]` / `v[i]` / `v[row]` / `arr[row]` expression
+  reachable from the `DataEngine` API has been rewritten to go through
+  `Vec::get` (with an explicit `ok_or` when we need to propagate an
+  error). Affected files: `filter.rs`, `slicer.rs`, `export.rs`,
+  `histogram.rs`. Behavior is unchanged — the guards were already in
+  place, but CodeQL's Rust extractor (beta) cannot track bounds checks
+  across control flow and was flagging every raw index expression as a
+  potential out-of-bounds deref.
+- Closed CodeQL `js/build-code-injection` in `kernelManager.ts`. The
+  Jupyter variable extractor no longer substitutes `variableName` into a
+  Python `eval()` call. It now validates each dotted segment against a
+  strict identifier allowlist (`[A-Za-z_][A-Za-z0-9_]*`), then embeds
+  the validated parts as a JSON string array (which is a Python list
+  literal on the kernel side) and walks the attribute chain via explicit
+  `globals()` / `locals()` lookups + `getattr`. No code is constructed
+  from user input anymore, even before the allowlist gate — so even an
+  attacker-controlled variable name can't be evaluated as Python.
+
+### Fixed
+
+- Version-bump fix-up release: `v0.1.2` was tagged without bumping
+  `package.json` or `crates/kensa-engine/Cargo.toml`, so vsce built a
+  VSIX still stamped `0.1.1` and the marketplace publish silently no-op'd
+  as "already published". `v0.1.3` bumps both manifests in lockstep so
+  the build actually produces a new version.
+
 ## [0.1.1] — 2026-04-13
 
 ### Fixed
@@ -203,5 +234,6 @@ First public release (never reached the marketplace — see 0.1.1).
 
 ---
 
+[0.1.3]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.3
 [0.1.1]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.0
