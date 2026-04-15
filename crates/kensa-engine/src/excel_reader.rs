@@ -33,11 +33,17 @@ pub fn read_excel(path: &str, sheet: Option<&str>) -> KensaResult<DataFrame> {
     for row in rows {
         for i in 0..n_cols {
             let v = row.get(i).map(cell_to_string).unwrap_or_default();
-            raw_columns[i].push(if v.is_empty() || is_na_token(&v) {
+            let cell = if v.is_empty() || is_na_token(&v) {
                 None
             } else {
                 Some(v)
-            });
+            };
+            // `.get_mut(i)` rather than `raw_columns[i]`. `i < n_cols` and
+            // `raw_columns.len() == n_cols`, so the bounds hold — but
+            // CodeQL can't see that invariant.
+            if let Some(col) = raw_columns.get_mut(i) {
+                col.push(cell);
+            }
         }
     }
 

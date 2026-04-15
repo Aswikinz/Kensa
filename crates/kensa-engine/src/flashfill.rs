@@ -20,12 +20,14 @@ use crate::column::ColumnData;
 use crate::types::ExamplePair;
 
 pub fn infer(_col: &ColumnData, examples: &[ExamplePair]) -> Option<String> {
-    if examples.is_empty() {
-        return None;
-    }
+    // `first()` instead of `&examples[0]` — the empty check is right above
+    // but CodeQL's Rust extractor flags the raw index anyway.
+    let first_out = match examples.first() {
+        Some(e) => &e.output,
+        None => return None,
+    };
 
     // 1. Constant
-    let first_out = &examples[0].output;
     if examples.iter().all(|e| &e.output == first_out) {
         return Some(format!("s.apply(lambda x: {:?})", first_out));
     }

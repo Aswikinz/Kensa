@@ -29,10 +29,17 @@ pub fn read_parquet(path: &str) -> KensaResult<DataFrame> {
         .map(|f| ColumnAccumulator::from_dtype(f.data_type()))
         .collect();
 
+    // `.get_mut(i)` instead of `accumulators[i]`. `accumulators` was built
+    // from the parquet schema and each `RecordBatch` is produced from the
+    // same schema, so `i < accumulators.len()` holds at runtime — but
+    // CodeQL can't track the schema/batch correspondence and flags the
+    // raw index as a potential OOB deref.
     for batch in reader {
         let batch = batch?;
         for (i, array) in batch.columns().iter().enumerate() {
-            accumulators[i].extend(array.as_ref());
+            if let Some(acc) = accumulators.get_mut(i) {
+                acc.extend(array.as_ref());
+            }
         }
     }
 

@@ -86,30 +86,40 @@ fn fill_numeric_stats(stats: &mut ColumnStats, nums: &[f64]) {
     stats.sum = Some(sum);
     stats.mean = Some(mean);
     stats.std = Some(std);
-    stats.min = Some(sorted[0].to_string());
-    stats.max = Some(sorted[sorted.len() - 1].to_string());
+    // `first()` / `last()` instead of `sorted[0]` / `sorted[sorted.len()-1]`.
+    // The `is_empty` guard above makes both raw indexes safe, but CodeQL's
+    // Rust extractor (beta) can't see that across the early return and flags
+    // the bare indexes under `rust/access-invalid-pointer`.
+    stats.min = sorted.first().map(|v| v.to_string());
+    stats.max = sorted.last().map(|v| v.to_string());
     stats.p25 = Some(percentile(&sorted, 0.25));
     stats.p50 = Some(percentile(&sorted, 0.50));
     stats.p75 = Some(percentile(&sorted, 0.75));
 }
 
 /// Linear-interpolation percentile (same as numpy's default, type 7).
+///
+/// `lo` / `hi` are derived from `p * (n-1)` where `n = sorted.len()`, so both
+/// are in `[0, n-1]` by construction. We still go through `Vec::get` because
+/// CodeQL can't track that arithmetic as a bounds proof.
 fn percentile(sorted: &[f64], p: f64) -> f64 {
     if sorted.is_empty() {
         return f64::NAN;
     }
     let n = sorted.len();
     if n == 1 {
-        return sorted[0];
+        return sorted.first().copied().unwrap_or(f64::NAN);
     }
     let idx = p * (n - 1) as f64;
     let lo = idx.floor() as usize;
     let hi = idx.ceil() as usize;
+    let lo_val = sorted.get(lo).copied().unwrap_or(f64::NAN);
+    let hi_val = sorted.get(hi).copied().unwrap_or(f64::NAN);
     if lo == hi {
-        sorted[lo]
+        lo_val
     } else {
         let frac = idx - lo as f64;
-        sorted[lo] * (1.0 - frac) + sorted[hi] * frac
+        lo_val * (1.0 - frac) + hi_val * frac
     }
 }
 

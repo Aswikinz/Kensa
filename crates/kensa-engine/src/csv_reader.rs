@@ -54,11 +54,18 @@ pub fn read_csv(
                 raw_columns.push(Vec::new());
             }
             let trimmed = field.trim();
-            raw_columns[i].push(if trimmed.is_empty() || is_na_token(trimmed) {
+            let cell = if trimmed.is_empty() || is_na_token(trimmed) {
                 None
             } else {
                 Some(field.to_string())
-            });
+            };
+            // `.get_mut(i)` instead of `raw_columns[i]`. The branch above
+            // guarantees `i < raw_columns.len()`, but CodeQL's Rust extractor
+            // can't track that and flags the raw index as a potential OOB
+            // deref under `rust/access-invalid-pointer`.
+            if let Some(col) = raw_columns.get_mut(i) {
+                col.push(cell);
+            }
         }
         // Pad short rows so all columns stay aligned.
         let max_len = raw_columns.iter().map(|c| c.len()).max().unwrap_or(0);

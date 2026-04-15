@@ -43,10 +43,17 @@ pub fn read_jsonl(path: &str) -> KensaResult<DataFrame> {
     let mut raw_columns: Vec<Vec<Option<String>>> =
         key_order.iter().map(|_| Vec::with_capacity(n_rows)).collect();
 
+    // `.get_mut(col_idx)` instead of `raw_columns[col_idx]`. `col_idx` comes
+    // from the enumerated iterator over `key_order`, and `raw_columns` was
+    // built with one entry per key — but CodeQL's Rust extractor can't prove
+    // `raw_columns.len() == key_order.len()` and flags the raw index as a
+    // potential OOB deref.
     for row in &rows {
         for (col_idx, key) in key_order.iter().enumerate() {
             let cell = row.get(key).and_then(value_to_string);
-            raw_columns[col_idx].push(cell);
+            if let Some(col) = raw_columns.get_mut(col_idx) {
+                col.push(cell);
+            }
         }
     }
 
