@@ -13,6 +13,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { PythonBackend } from './pythonBackend';
+import { pickWorkingNotebook } from './notebookResolver';
 
 /** Minimal shape of the subset of `ms-toolsai.jupyter`'s exported API we rely
  *  on. The full surface is large and unstable; we keep our dependency surface
@@ -62,29 +63,17 @@ export class KernelManager {
     return ext.exports as JupyterApi;
   }
 
-  /** Find a notebook the user is probably working in. An explicit hint from
-   *  the notebook toolbar command is authoritative — if it's given and the
-   *  notebook is still open, we pin to it; if it's given but the notebook
-   *  was closed, we return null so the caller fails with a clear error
-   *  instead of silently retargeting another notebook.
-   *
-   *  With no hint (command palette invocation), we fall back to the active
-   *  or visible editor but never to `notebookDocuments[0]` — that list is
-   *  ordered by open-time, so the oldest notebook always won, which was
-   *  the root cause of the "No kernel is attached to <previous notebook>"
-   *  bug when the user switched notebooks. */
+  /** Find a notebook the user is probably working in. See `pickWorkingNotebook`
+   *  for the full policy — this is a thin wrapper that reads the vscode API
+   *  so the pure logic can be unit-tested without stubbing the whole
+   *  `vscode` module. */
   private findWorkingNotebook(hint?: vscode.Uri): vscode.NotebookDocument | null {
-    if (hint) {
-      const match = vscode.workspace.notebookDocuments.find(
-        (d) => d.uri.toString() === hint.toString()
-      );
-      return match ?? null;
-    }
-    const active = vscode.window.activeNotebookEditor?.notebook;
-    if (active) return active;
-    const visible = vscode.window.visibleNotebookEditors;
-    if (visible.length > 0) return visible[0]?.notebook ?? null;
-    return null;
+    return pickWorkingNotebook(
+      hint,
+      vscode.workspace.notebookDocuments,
+      vscode.window.activeNotebookEditor,
+      vscode.window.visibleNotebookEditors
+    );
   }
 
   /** Extract a variable from a live Jupyter kernel by asking it to pickle
@@ -123,11 +112,6 @@ export class KernelManager {
 
     const notebook = this.findWorkingNotebook(notebookHint);
     if (!notebook) {
-      if (notebookHint) {
-        throw new Error(
-          `The notebook '${path.basename(notebookHint.fsPath)}' is no longer open. Re-open it and try again, or use "Kensa: Open Variable" from the command palette against the currently focused notebook.`
-        );
-      }
       throw new Error(
         'No Jupyter notebook is open. Open an .ipynb notebook, execute at least one cell that defines your DataFrame, then retry.'
       );

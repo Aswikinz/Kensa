@@ -1,5 +1,9 @@
 # Kensa
 
+[![build](https://github.com/Aswikinz/Kensa/actions/workflows/build.yml/badge.svg)](https://github.com/Aswikinz/Kensa/actions/workflows/build.yml)
+[![coverage](https://codecov.io/gh/Aswikinz/Kensa/branch/main/graph/badge.svg)](https://codecov.io/gh/Aswikinz/Kensa)
+[![codeql](https://github.com/Aswikinz/Kensa/actions/workflows/codeql.yml/badge.svg)](https://github.com/Aswikinz/Kensa/actions/workflows/codeql.yml)
+
 **Kensa** is an open-source VS Code extension for visual tabular data exploration and cleaning. It ships with a Rust-powered viewer for instant loading of CSV/Parquet/Excel/JSONL files and a Python/Pandas code-generating editor for interactive transformation.
 
 > Independent, clean-room reimplementation. Not affiliated with any proprietary data wrangling product.

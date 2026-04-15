@@ -1,0 +1,109 @@
+name: coverage
+
+# Coverage pipeline for Kensa. Runs on every push to main and every PR so
+# regressions show up in the PR UI via the Codecov status check + comment.
+#
+# Linux-only on purpose — coverage doesn't need to come from every platform,
+# and running it in the full build matrix would triple the CI cost without
+# telling us anything new. The build.yml workflow still cross-compiles on
+# all six targets; that's where platform regressions surface.
+#
+# Two LCOV files are uploaded to Codecov under separate flags (`rust`, `ts`)
+# so the dashboard and PR comment show per-component coverage instead of a
+# single blended number. Codecov is tokenless for public repos — no secret
+# needed. If the repo is ever flipped private, add `CODECOV_TOKEN` to the
+# repo secrets and reference it via `token: ${{ secrets.CODECOV_TOKEN }}`
+# on each upload step.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  coverage:
+    name: coverage (linux-x64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Install npm deps
+        run: npm ci || npm install
+
+      # Build the native `.node` module so the TypeScript integration test
+      # (`test/integration/engine.test.ts`) can `require` it. This is the
+      # same debug build the local `npm run build:rust:debug` script uses.
+      - name: Build native module for TS tests
+        run: >
+          npx napi build --platform
+          --cargo-cwd crates/kensa-engine
+          --js index.js --dts index.d.ts
+          crates/kensa-engine
+
+      # Rust coverage: cargo-llvm-cov instruments the crate, runs the unit
+      # tests, and emits LCOV. Output lives under `coverage/` so both
+      # components share one directory for the upload steps below.
+      - name: Rust coverage
+        run: |
+          mkdir -p coverage
+          cargo llvm-cov \
+            --manifest-path crates/kensa-engine/Cargo.toml \
+            --lcov \
+            --output-path coverage/rust-lcov.info
+
+      # TypeScript coverage: c8 wraps `node --test`, collects V8 coverage
+      # from the test process, and maps it back to the original .ts files
+      # via the inline sourcemaps emitted by scripts/ts-loader.mjs.
+      - name: TypeScript coverage
+        run: npm run test:coverage
+
+      # Per-component uploads. Two `codecov-action` steps with distinct
+      # `flags` values so Codecov can track `rust` and `ts` coverage
+      # independently — otherwise LCOV files from different languages
+      # get merged and the dashboard shows nonsense numbers.
+      - name: Upload Rust coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/rust-lcov.info
+          flags: rust
+          name: kensa-rust
+          fail_ci_if_error: false
+          disable_search: true
+
+      - name: Upload TypeScript coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/ts/lcov.info
+          flags: ts
+          name: kensa-ts
+          fail_ci_if_error: false
+          disable_search: true
+
+      # Keep the raw LCOV files around as a workflow artifact so they can
+      # be downloaded and inspected locally even if the Codecov upload is
+      # ever degraded.
+      - name: Upload raw coverage artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-lcov
+          path: |
+            coverage/rust-lcov.info
+            coverage/ts/lcov.info
+          if-no-files-found: error

@@ -44,7 +44,12 @@ export function load(url, context, defaultLoad) {
       loader: url.endsWith('.tsx') ? 'tsx' : 'ts',
       format: 'esm',
       target: 'es2022',
-      sourcefile: filename
+      sourcefile: filename,
+      // Inline sourcemaps so `c8` can map V8 coverage from the transpiled
+      // JS back to the original `.ts` source. Without this, coverage
+      // reports hang off synthetic paths and the LCOV upload to Codecov
+      // points at files that don't exist in the repo.
+      sourcemap: 'inline'
     });
     return { format: 'module', source: code, shortCircuit: true };
   }

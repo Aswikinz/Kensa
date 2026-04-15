@@ -1,6 +1,6 @@
 [package]
 name = "kensa-engine"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 license = "MIT"
 description = "Native data engine for Kensa — columnar CSV/Parquet/Excel reader and statistics kernel."

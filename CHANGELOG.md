@@ -4,6 +4,63 @@ All notable changes to Kensa are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Kensa follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] — 2026-04-15
+
+### Fixed
+
+- **Regression from 0.1.4: notebook flows hard-failed on every hint miss.**
+  In 0.1.4 `findWorkingNotebook` was tightened so an unmatched hint URI
+  returned `null` instead of falling through to the active/visible editor.
+  That looked safer on paper but broke every real notebook flow, because
+  the URI the notebook toolbar hands us doesn't always serialize
+  identically to what `workspace.notebookDocuments` stores (different
+  scheme, encoding, or cell fragment across VS Code versions). Users
+  saw "No Jupyter notebook is open" for every variable extraction even
+  with a notebook focused right in front of them. The resolver is now
+  forgiving: strict match → loose `fsPath` match → active editor →
+  visible editor → null. We still never fall back to
+  `notebookDocuments[0]`, which was the original
+  "picks-the-first-ever-opened-notebook" bug from 0.1.3.
+
+### Tests
+
+- New unit test file `test/shared/notebookResolver.test.ts` with ten
+  cases pinning the notebook-resolution policy: strict match, loose
+  fsPath match, hint miss falls through to active, hint miss falls
+  through to visible, no hint chains, empty-documents corner cases, and
+  hint-wins-over-active. The hint-miss cases would have caught the 0.1.4
+  regression before it shipped.
+- Extracted the resolution logic to [src/extension/notebookResolver.ts](src/extension/notebookResolver.ts)
+  so it's importable under `node --test` without stubbing the full
+  `vscode` runtime module. `kernelManager.ts` now calls the pure helper
+  with the live vscode state, and the pure helper is what the tests
+  exercise.
+
+### Coverage + CI
+
+- New `coverage` workflow ([.github/workflows/coverage.yml](.github/workflows/coverage.yml))
+  runs on every push to main and every PR. Linux-only by design —
+  coverage doesn't need to come from every platform, and running it
+  under the six-target build matrix would triple CI cost without
+  telling us anything new.
+- Rust coverage via `cargo-llvm-cov` (LCOV output).
+- TypeScript coverage via `c8` wrapping `node --test`. The custom TS
+  loader ([scripts/ts-loader.mjs](scripts/ts-loader.mjs)) now emits
+  inline sourcemaps so V8 coverage maps back to the original `.ts`
+  files instead of the transpiled JS.
+- Both LCOV files are uploaded to Codecov under separate flags (`rust`,
+  `ts`) so per-component coverage is tracked independently; codecov.yml
+  pins the routing and sets the status checks to `informational: true`
+  for now (no hard merge gate until the baseline is trustworthy).
+- Raw LCOV files are also uploaded as workflow artifacts so they can
+  be downloaded and inspected if the Codecov upload is ever degraded.
+- Coverage + build + CodeQL badges added to the README.
+- Baseline numbers from the first local run: `notebookResolver.ts`
+  100%, `messages.ts` 100%, `operations.ts` 95.17%. The IO boundaries
+  (kernelManager, webviewProvider, dataRouter, pythonBackend) and the
+  React webview are at 0% — fixing those is a follow-up that gets
+  filled in as we touch each module, not a v0.1.5 blocker.
+
 ## [0.1.4] — 2026-04-15
 
 ### Fixed
@@ -255,6 +312,7 @@ First public release (never reached the marketplace — see 0.1.1).
 
 ---
 
+[0.1.5]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.5
 [0.1.4]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.4
 [0.1.3]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.3
 [0.1.1]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.1

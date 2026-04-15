@@ -1,0 +1,41 @@
+# Codecov configuration — controls the PR comment, the status checks, and
+# the coverage-drop tolerance. See https://docs.codecov.com/docs/codecovyml-reference
+#
+# The `project` status check guards against overall coverage regressions;
+# the `patch` status check guards the lines actually touched by a PR. Both
+# are informational (`informational: true`) for now — they report but don't
+# block merges. Once we're confident in the numbers we can flip them to
+# hard gates by removing `informational: true` and setting `target` to a
+# real percentage.
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+
+# Component flagging so `rust` and `ts` coverage tracks separately instead
+# of being blended into one number. These names must match the `flags:`
+# values in `.github/workflows/coverage.yml`.
+flag_management:
+  default_rules:
+    carryforward: true
+  individual_flags:
+    - name: rust
+      paths:
+        - crates/kensa-engine/src/
+    - name: ts
+      paths:
+        - src/
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false

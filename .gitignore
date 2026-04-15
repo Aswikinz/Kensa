@@ -3,6 +3,8 @@ dist/
 out/
 *.vsix
 .vscode-test/
+coverage/
+.nyc_output/
 
 # Rust
 target/
