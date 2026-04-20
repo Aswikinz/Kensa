@@ -9,7 +9,7 @@ description = "Native data engine for Kensa — columnar CSV/Parquet/Excel reade
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-napi = { version = "2", features = ["napi9", "serde-json"] }
+napi = { version = "3", features = ["napi9", "serde-json"] }
 napi-derive = "2"
 csv = "1.3"
 arrow = "53"
