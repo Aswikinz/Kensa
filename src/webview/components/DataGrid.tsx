@@ -28,7 +28,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { ColumnHeader } from './ColumnHeader';
 import { useKensaStore } from '../state/store';
 import { postMessage } from '../vscodeApi';
-import type { DataSlice, DiffSummary } from '../../shared/types';
+import { showToast } from './Toast';
+import { CellContextMenu, type CellContextTarget } from './CellContextMenu';
+import { alignForDtype, missingLabelForDtype, truncateForToast } from '../formatters';
+import type { DataSlice, DiffSummary, FilterOp } from '../../shared/types';
 
 /** Build a Set<"row:col"> from the diff so cell rendering is O(1) per cell. */
 function buildModifiedSet(
@@ -46,9 +49,13 @@ function buildModifiedSet(
 
 const ROW_HEIGHT = 28;
 const ROW_NUMBER_WIDTH = 60;
-const DEFAULT_COL_WIDTH = 160;
+// 184px fits the worst-case stats row ("99.8% missing · 99.8% unique")
+// on a single line with padding to spare. The earlier 160px default
+// clipped the trailing "unique" word on high-missing columns.
+const DEFAULT_COL_WIDTH = 184;
 const OVERSCAN = 6;
 const PAGE_SIZE = 500;
+const COLUMN_HIGHLIGHT_MS = 1200;
 
 interface DataGridProps {
   readonly slice: DataSlice;
@@ -76,6 +83,126 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
   const selectedColumn = useKensaStore((s) => s.selectedColumn);
   const setSelectedColumn = useKensaStore((s) => s.setSelectedColumn);
   const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null);
+  // Tracks the most-recently-copied cell so the CSS flash animation can
+  // retrigger cleanly — setting to null after the animation duration lets
+  // a second copy on the same cell re-fire the keyframes.
+  const [justCopied, setJustCopied] = useState<{ row: number; col: number } | null>(null);
+  const copyTimerRef = useRef<number | null>(null);
+
+  const copyCellToClipboard = (value: string, row: number, col: number) => {
+    // `navigator.clipboard.writeText` returns a promise but we fire-and-
+    // forget — the toast shows immediately on success, and if the write
+    // fails the catch replaces the success toast with a warning. We don't
+    // `await` because we want the flash animation to start on the same
+    // frame as the click for a snappy feel.
+    navigator.clipboard
+      .writeText(value)
+      .then(() => {
+        showToast('Copied', { value: truncateForToast(value), icon: '✓' });
+      })
+      .catch(() => {
+        showToast('Copy blocked by browser', { icon: '!' });
+      });
+    setJustCopied({ row, col });
+    if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = window.setTimeout(() => setJustCopied(null), 700);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
+  // Right-click context menu state. When open, `contextTarget` carries
+  // which cell was right-clicked plus the cursor position so the menu
+  // can anchor there. Clicking anywhere or pressing Escape closes it.
+  const [contextTarget, setContextTarget] = useState<CellContextTarget | null>(null);
+  const addFilter = useKensaStore((s) => s.addFilter);
+  const activeFilters = useKensaStore((s) => s.activeFilters);
+  const removeColumnFilter = useKensaStore((s) => s.removeColumnFilter);
+  const applySort = useKensaStore((s) => s.applySort);
+
+  const writeClipboard = (text: string, successToast: { label: string; value?: string }) => {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => showToast(successToast.label, { value: successToast.value, icon: '✓' }))
+      .catch(() => showToast('Copy blocked by browser', { icon: '!' }));
+  };
+
+  const copyRowAt = (rowIdx: number): void => {
+    const pageStart = Math.floor(rowIdx / PAGE_SIZE) * PAGE_SIZE;
+    const localIdx = rowIdx - pageStart;
+    const row = slice.rows[localIdx];
+    if (!row) return;
+    const tsv = row
+      .map((v) => (v === null || v === undefined ? '' : String(v)))
+      .join('\t');
+    writeClipboard(tsv, { label: 'Row copied', value: `row ${rowIdx + 1} · ${row.length} cells` });
+  };
+
+  const copyColumnAt = (colIdx: number): void => {
+    // Copies every currently-loaded value in the column plus the header.
+    // For paginated/virtualized slices this is the current slice window,
+    // which is usually what the user wants (copy the visible column).
+    const header = slice.columns[colIdx]?.name ?? '';
+    const values = slice.rows.map((r) => {
+      const v = r[colIdx];
+      return v === null || v === undefined ? '' : String(v);
+    });
+    writeClipboard([header, ...values].join('\n'), {
+      label: 'Column copied',
+      value: `${header} · ${values.length} values`
+    });
+  };
+
+  // Column-search integration. The toolbar's search input writes to the
+  // store via `requestScrollToColumn`, bumping a monotonic token. This
+  // effect listens for token changes, finds the matching column by
+  // prefix-or-contains match on its name (case-insensitive), and scrolls
+  // its header into view. The highlighted-column state is cleared after
+  // the pulse animation completes so a second search re-triggers.
+  const scrollToColumnName = useKensaStore((s) => s.scrollToColumnName);
+  const scrollToColumnToken = useKensaStore((s) => s.scrollToColumnToken);
+  const [highlightedColumn, setHighlightedColumn] = useState<number | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!scrollToColumnName || scrollToColumnToken === 0) return;
+    const query = scrollToColumnName.toLowerCase();
+    const idx =
+      slice.columns.findIndex((c) => c.name.toLowerCase() === query) >= 0
+        ? slice.columns.findIndex((c) => c.name.toLowerCase() === query)
+        : slice.columns.findIndex((c) =>
+            c.name.toLowerCase().startsWith(query)
+          ) >= 0
+        ? slice.columns.findIndex((c) => c.name.toLowerCase().startsWith(query))
+        : slice.columns.findIndex((c) =>
+            c.name.toLowerCase().includes(query)
+          );
+    if (idx < 0) return;
+    // Compute the left offset of the matched column header by summing
+    // the widths of every column to its left (+ row number column).
+    const leftOffset = columnWidths
+      .slice(0, idx)
+      .reduce((acc, w) => acc + (w ?? DEFAULT_COL_WIDTH), ROW_NUMBER_WIDTH);
+    scrollRef.current?.scrollTo({
+      left: Math.max(0, leftOffset - 40),
+      behavior: 'smooth'
+    });
+    setHighlightedColumn(idx);
+    if (highlightTimerRef.current !== null) window.clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = window.setTimeout(() => {
+      setHighlightedColumn(null);
+    }, COLUMN_HIGHLIGHT_MS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollToColumnToken]);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current !== null) window.clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
 
   const columnIndexByName = useMemo(() => {
     const m = new Map<string, number>();
@@ -197,8 +324,14 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
         style={rowStyle}
       >
         <div
-          className="kensa-row-number"
+          className="kensa-row-number kensa-row-number-clickable"
           style={{ width: ROW_NUMBER_WIDTH, minWidth: ROW_NUMBER_WIDTH }}
+          title={row ? 'Click to copy the whole row as tab-separated text' : ''}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!row) return;
+            copyRowAt(rowIdx);
+          }}
         >
           {rowIdx + 1}
         </div>
@@ -208,31 +341,62 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
               const isMissing = value === null || value === undefined;
               const isSelected =
                 selectedCell && selectedCell.row === rowIdx && selectedCell.col === colIdx;
-              // In preview mode, consult the per-window mask; outside
-              // preview mode, fall back to the applied-diff set. Both
-              // paths are O(1) per cell.
               const maskRow = previewSlice ? previewChangedMask[localIdx] : undefined;
               const isModified = previewSlice
                 ? maskRow?.[colIdx] === true
                 : modifiedSet.has(`${rowIdx}:${colIdx}`);
               const isAdded = addedColumns.has(col.name);
-              const classes = ['kensa-cell'];
+              const wasJustCopied =
+                justCopied && justCopied.row === rowIdx && justCopied.col === colIdx;
+              const align = alignForDtype(col.dtype);
+              const classes = ['kensa-cell', `kensa-cell-align-${align}`];
               if (isMissing) classes.push('kensa-cell-missing');
               if (isSelected) classes.push('kensa-cell-selected');
               if (isModified) classes.push('diff-modified');
               if (isAdded) classes.push('diff-added');
+              if (wasJustCopied) classes.push('kensa-cell-just-copied');
               return (
                 <div
                   key={colIdx}
                   className={classes.join(' ')}
                   style={{ width: columnWidths[colIdx], minWidth: columnWidths[colIdx] }}
                   onClick={() => {
+                    // Left-click selects the cell only. Copying is
+                    // deliberately routed through the right-click menu
+                    // (or the row-number click for full-row copy) —
+                    // auto-copying on every selection click was noisy
+                    // and interfered with the natural "click to see
+                    // column details in the side panel" flow.
                     setSelectedCell({ row: rowIdx, col: colIdx });
                     setSelectedColumn(colIdx);
                   }}
-                  title={isMissing ? 'missing' : value ?? ''}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setSelectedCell({ row: rowIdx, col: colIdx });
+                    setSelectedColumn(colIdx);
+                    setContextTarget({
+                      rowIdx,
+                      colIdx,
+                      columnName: col.name,
+                      columnDtype: col.dtype,
+                      value: isMissing ? null : String(value),
+                      cursorX: e.clientX,
+                      cursorY: e.clientY
+                    });
+                  }}
+                  title={isMissing ? `missing (${missingLabelForDtype(col.dtype).text})` : `${String(value ?? '')}  (right-click for copy / filter / sort)`}
                 >
-                  {isMissing ? '—' : value}
+                  {isMissing ? (
+                    <span
+                      className={`kensa-missing-label kensa-missing-label-${
+                        missingLabelForDtype(col.dtype).kind
+                      }`}
+                    >
+                      {missingLabelForDtype(col.dtype).text}
+                    </span>
+                  ) : (
+                    value
+                  )}
                 </div>
               );
             })
@@ -286,6 +450,7 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
                 onResize={(w) => handleResize(i, w)}
                 selected={selectedColumn === i}
                 onSelect={() => setSelectedColumn(i)}
+                highlight={highlightedColumn === i}
               />
             ))}
           </div>
@@ -302,6 +467,36 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
           </div>
         </div>
       </div>
+
+      {contextTarget && (
+        <CellContextMenu
+          target={contextTarget}
+          onClose={() => setContextTarget(null)}
+          onCopyValue={() => {
+            if (contextTarget.value != null) {
+              copyCellToClipboard(contextTarget.value, contextTarget.rowIdx, contextTarget.colIdx);
+            }
+          }}
+          onCopyRow={() => copyRowAt(contextTarget.rowIdx)}
+          onCopyColumn={() => copyColumnAt(contextTarget.colIdx)}
+          onFilter={(op: FilterOp) => {
+            if (contextTarget.value == null) return;
+            addFilter({
+              columnIndex: contextTarget.colIdx,
+              op,
+              value: contextTarget.value,
+              caseInsensitive: true
+            });
+          }}
+          onSort={(ascending) =>
+            applySort({ columnIndex: contextTarget.colIdx, ascending })
+          }
+          onClearColumnFilters={() => removeColumnFilter(contextTarget.colIdx)}
+          hasColumnFilters={activeFilters.some(
+            (f) => f.columnIndex === contextTarget.colIdx
+          )}
+        />
+      )}
     </div>
   );
 }

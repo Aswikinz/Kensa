@@ -25,3 +25,7 @@ crates/kensa-engine/npm/
 
 
 .claude/
+
+# Local test scratch — never commit
+test-kensa.ipynb
+*.scratch.ipynb

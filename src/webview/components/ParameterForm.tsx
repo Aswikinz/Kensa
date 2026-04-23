@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { humanizeOption, type OperationSpec, type ParameterSchema } from '../../shared/operations';
 import { useKensaStore } from '../state/store';
 import { postMessage } from '../vscodeApi';
+import { ColumnPicker } from './ColumnPicker';
 
 interface Props {
   readonly operation: OperationSpec;
@@ -72,43 +73,28 @@ function renderField(
 ): React.ReactNode {
   switch (param.kind) {
     case 'column':
+      // Themed searchable single-select — replaces the native `<select>`
+      // that showed up as a browser-default white dropdown on dark themes.
       return (
-        <select
-          className="kensa-input"
-          value={String(value ?? '')}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          <option value="">— select column —</option>
-          {columns.map((c) => (
-            <option key={c.index} value={c.name}>
-              {c.name} ({c.dtype})
-            </option>
-          ))}
-        </select>
+        <ColumnPicker
+          columns={columns}
+          value={typeof value === 'string' ? value : ''}
+          onChange={(v) => onChange(v)}
+          placeholder="— select column —"
+        />
       );
-    case 'columnMulti': {
-      const arr = Array.isArray(value) ? (value as string[]) : [];
+    case 'columnMulti':
+      // Themed searchable multi-select — replaces the unsorted checkbox
+      // scroll-list, which was unworkable once a dataset had 30+ columns.
       return (
-        <div className="kensa-multicol">
-          {columns.map((c) => {
-            const checked = arr.includes(c.name);
-            return (
-              <label key={c.index} className="kensa-checkbox">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={(e) => {
-                    if (e.target.checked) onChange([...arr, c.name]);
-                    else onChange(arr.filter((x) => x !== c.name));
-                  }}
-                />
-                <span>{c.name}</span>
-              </label>
-            );
-          })}
-        </div>
+        <ColumnPicker
+          multi
+          columns={columns}
+          value={Array.isArray(value) ? (value as string[]) : []}
+          onChange={(v) => onChange(v)}
+          placeholder="— select columns —"
+        />
       );
-    }
     case 'string':
       return (
         <input

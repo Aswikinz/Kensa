@@ -1,23 +1,80 @@
-/* All colors pull from VS Code theme variables so Kensa adapts automatically
- * to the user's chosen theme. No hardcoded hex values. */
+/* Kensa design system — glass + colour refresh.
+ *
+ * Built around two primary hues (#1881C4 blue, #EB078C pink) layered over
+ * VS Code's dark editor background. Glass surfaces use translucent white
+ * with `backdrop-filter` blur; typography uses VS Code's font with a tighter
+ * size scale; geometry leans on 8 / 12 / 16 / 999px radii.
+ *
+ * Every existing `.kensa-*` class name is preserved so React components
+ * keep working — only their styling changed. New utility classes (`.kensa-
+ * glass`, `.kensa-stat-card`, `.kensa-toast`) are additive. */
 
 :root {
-  --kensa-border: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
-  --kensa-muted: var(--vscode-descriptionForeground, rgba(128, 128, 128, 0.85));
-  --kensa-accent: var(--vscode-focusBorder, #007acc);
-  /* Zebra-stripe tint. We deliberately do NOT use
-     --vscode-editor-inactiveSelectionBackground — in most dark themes that
-     variable is a strong blue, which turns every alternate row into a
-     highlighted band. A theme-agnostic semi-transparent overlay keeps the
-     stripe subtle and never looks like a selection. */
-  --kensa-row-alt: rgba(127, 127, 127, 0.06);
-  --kensa-row-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
-  --kensa-selection: var(--vscode-editor-selectionBackground, rgba(0, 122, 204, 0.3));
-  --kensa-button-bg: var(--vscode-button-background, #0e639c);
-  --kensa-button-fg: var(--vscode-button-foreground, #ffffff);
-  --kensa-input-bg: var(--vscode-input-background, rgba(0, 0, 0, 0.2));
-  --kensa-input-fg: var(--vscode-input-foreground, inherit);
-  --kensa-input-border: var(--vscode-input-border, var(--kensa-border));
+  /* Primary (blue) ------------------------------------------------------- */
+  --kensa-primary: #1881C4;
+  --kensa-primary-strong: #2E9BDB;
+  --kensa-primary-soft: rgba(24, 129, 196, 0.14);
+  --kensa-primary-glow: rgba(24, 129, 196, 0.45);
+
+  /* Accent (pink) -------------------------------------------------------- */
+  --kensa-accent: #EB078C;
+  --kensa-accent-strong: #FF4FB1;
+  --kensa-accent-soft: rgba(235, 7, 140, 0.14);
+  --kensa-accent-glow: rgba(235, 7, 140, 0.45);
+
+  /* Glass surfaces ------------------------------------------------------- */
+  --kensa-surface-0: rgba(255, 255, 255, 0.02);
+  --kensa-surface-1: rgba(255, 255, 255, 0.04);
+  --kensa-surface-2: rgba(255, 255, 255, 0.07);
+  --kensa-surface-3: rgba(255, 255, 255, 0.10);
+  --kensa-surface-hover: rgba(255, 255, 255, 0.08);
+
+  /* Borders -------------------------------------------------------------- */
+  --kensa-border-subtle: rgba(255, 255, 255, 0.06);
+  --kensa-border: rgba(255, 255, 255, 0.10);
+  --kensa-border-strong: rgba(255, 255, 255, 0.18);
+
+  /* Text ---------------------------------------------------------------- */
+  --kensa-text: var(--vscode-foreground, rgba(255, 255, 255, 0.92));
+  --kensa-muted: rgba(255, 255, 255, 0.62);
+  --kensa-text-subtle: rgba(255, 255, 255, 0.40);
+
+  /* Semantic ------------------------------------------------------------ */
+  --kensa-success: #4AD395;
+  --kensa-warning: #EB078C;
+  --kensa-danger: #FF5C7F;
+
+  /* Geometry ------------------------------------------------------------ */
+  --kensa-radius-sm: 8px;
+  --kensa-radius-md: 12px;
+  --kensa-radius-lg: 16px;
+  --kensa-radius-pill: 999px;
+
+  /* Shadows ------------------------------------------------------------- */
+  --kensa-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --kensa-shadow-md: 0 6px 22px rgba(0, 0, 0, 0.32);
+  --kensa-shadow-lg: 0 16px 52px rgba(0, 0, 0, 0.48);
+  --kensa-shadow-glow: 0 0 24px -6px var(--kensa-primary-glow);
+
+  /* Effects ------------------------------------------------------------- */
+  --kensa-blur: blur(14px) saturate(1.35);
+  --kensa-blur-heavy: blur(22px) saturate(1.5);
+
+  /* Motion -------------------------------------------------------------- */
+  --kensa-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --kensa-motion: 180ms var(--kensa-ease);
+  --kensa-motion-slow: 320ms var(--kensa-ease);
+
+  /* Back-compat aliases used by older class selectors below. They now
+     point at the new palette so legacy rules don't need rewiring. */
+  --kensa-row-alt: rgba(255, 255, 255, 0.025);
+  --kensa-row-hover: rgba(24, 129, 196, 0.09);
+  --kensa-selection: var(--kensa-primary-soft);
+  --kensa-button-bg: var(--kensa-primary);
+  --kensa-button-fg: #FFFFFF;
+  --kensa-input-bg: rgba(0, 0, 0, 0.28);
+  --kensa-input-fg: var(--kensa-text);
+  --kensa-input-border: var(--kensa-border);
 }
 
 * {
@@ -29,6 +86,28 @@
   flex-direction: column;
   height: 100%;
   font-size: 13px;
+  color: var(--kensa-text);
+  background: var(--vscode-editor-background);
+  /* A subtle radial glow in the top-right corner gives the overall app a
+     bit of colored depth without being distracting. Uses the primary
+     blue at very low opacity. */
+  background-image:
+    radial-gradient(ellipse 800px 400px at 90% 0%, rgba(24, 129, 196, 0.06), transparent 60%),
+    radial-gradient(ellipse 600px 300px at 10% 100%, rgba(235, 7, 140, 0.04), transparent 60%);
+}
+
+/* Shared utility — glass card treatment used by panels + toasts + popovers */
+.kensa-glass {
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.06) 0%,
+      rgba(255, 255, 255, 0.02) 100%
+    );
+  backdrop-filter: var(--kensa-blur);
+  -webkit-backdrop-filter: var(--kensa-blur);
+  border: 1px solid var(--kensa-border);
+  box-shadow: var(--kensa-shadow-md);
 }
 
 /* Toolbar -------------------------------------------------------------------*/
@@ -36,18 +115,27 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
-  min-height: 42px;
-  border-bottom: 1px solid var(--kensa-border);
+  padding: 8px 14px;
+  min-height: 48px;
   gap: 16px;
-  background: var(--vscode-editor-background);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.03) 0%,
+      rgba(255, 255, 255, 0.00) 100%
+    );
+  backdrop-filter: var(--kensa-blur);
+  -webkit-backdrop-filter: var(--kensa-blur);
+  border-bottom: 1px solid var(--kensa-border-subtle);
+  position: relative;
+  z-index: 10;
 }
 
 .kensa-toolbar-left,
 .kensa-toolbar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .kensa-toolbar-right {
@@ -55,30 +143,45 @@
 }
 
 .kensa-brand {
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.02em;
+  font-size: 14px;
+  background: linear-gradient(135deg, var(--kensa-primary-strong) 0%, var(--kensa-accent-strong) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .kensa-filename {
   color: var(--kensa-muted);
+  font-size: 12px;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kensa-mode-toggle {
   display: inline-flex;
-  border: 1px solid var(--kensa-border);
-  border-radius: 4px;
+  padding: 2px;
+  background: var(--kensa-surface-1);
+  border: 1px solid var(--kensa-border-subtle);
+  border-radius: var(--kensa-radius-pill);
   overflow: hidden;
 }
 
 .kensa-mode-btn {
   background: transparent;
-  color: inherit;
+  color: var(--kensa-muted);
   border: none;
   padding: 4px 14px;
   cursor: pointer;
-  min-width: 54px;
+  min-width: 56px;
   font-family: inherit;
   font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--kensa-radius-pill);
+  transition: background var(--kensa-motion), color var(--kensa-motion);
 }
 
 .kensa-mode-btn:disabled {
@@ -87,8 +190,9 @@
 }
 
 .kensa-mode-btn.kensa-mode-active {
-  background: var(--kensa-accent);
-  color: var(--kensa-button-fg);
+  background: linear-gradient(135deg, var(--kensa-primary) 0%, var(--kensa-primary-strong) 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 8px var(--kensa-primary-glow);
 }
 
 .kensa-mode-hint {
@@ -96,7 +200,7 @@
   font-size: 11px;
   border: 1px dashed var(--kensa-border);
   padding: 3px 10px;
-  border-radius: 4px;
+  border-radius: var(--kensa-radius-pill);
 }
 
 .kensa-btn-ghost {
@@ -104,24 +208,26 @@
   padding: 4px 10px;
 }
 
-/* Filter badge — persistent indicator that the current view is filtered. */
+/* Filter badge — pink pill, prominent but not loud. */
 .kensa-filter-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px 3px 10px;
-  border-radius: 12px;
-  background: var(--vscode-statusBarItem-warningBackground, rgba(255, 190, 0, 0.18));
-  color: var(--vscode-statusBarItem-warningForeground, inherit);
-  border: 1px solid var(--vscode-statusBarItem-warningBackground, rgba(255, 190, 0, 0.4));
+  padding: 4px 10px 4px 12px;
+  border-radius: var(--kensa-radius-pill);
+  background: var(--kensa-accent-soft);
+  color: var(--kensa-accent-strong);
+  border: 1px solid rgba(235, 7, 140, 0.3);
   font-size: 11px;
+  font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: filter 120ms ease;
+  transition: all var(--kensa-motion);
 }
 
 .kensa-filter-badge:hover {
-  filter: brightness(1.1);
+  background: rgba(235, 7, 140, 0.22);
+  box-shadow: 0 0 16px -4px var(--kensa-accent-glow);
 }
 
 .kensa-filter-badge-icon {
@@ -132,14 +238,24 @@
 .kensa-filter-badge-label {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.kensa-filter-badge-ratio {
+  color: var(--kensa-accent-strong);
+  font-weight: 700;
+  opacity: 0.9;
 }
 
 .kensa-filter-badge-close {
   font-size: 14px;
   line-height: 1;
-  padding-left: 4px;
-  border-left: 1px solid currentColor;
-  opacity: 0.75;
+  padding-left: 6px;
+  margin-left: 2px;
+  border-left: 1px solid rgba(235, 7, 140, 0.3);
+  opacity: 0.8;
 }
 
 .kensa-filter-badge:hover .kensa-filter-badge-close {
@@ -149,14 +265,17 @@
 .kensa-engine-indicator {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  border-radius: 10px;
-  border: 1px solid var(--kensa-border);
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--kensa-radius-pill);
+  background: var(--kensa-surface-1);
+  border: 1px solid var(--kensa-border-subtle);
   font-size: 11px;
   color: var(--kensa-muted);
   font-variant-numeric: tabular-nums;
   user-select: none;
+  backdrop-filter: var(--kensa-blur);
+  -webkit-backdrop-filter: var(--kensa-blur);
 }
 
 .kensa-engine-indicator svg {
@@ -164,20 +283,65 @@
 }
 
 .kensa-engine-rust {
-  border-color: var(--vscode-statusBarItem-warningBackground, rgba(255, 190, 0, 0.4));
-  color: var(--vscode-statusBarItem-warningBackground, #d4a017);
+  color: #F5B82E;
+  border-color: rgba(245, 184, 46, 0.25);
+  background: rgba(245, 184, 46, 0.08);
 }
 
 .kensa-engine-python {
-  border-color: var(--vscode-charts-blue, rgba(64, 156, 220, 0.5));
-  color: var(--vscode-charts-blue, #4ec9b0);
+  color: var(--kensa-primary-strong);
+  border-color: rgba(46, 155, 219, 0.25);
+  background: rgba(46, 155, 219, 0.08);
 }
 
 .kensa-engine-label {
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.02em;
 }
 
+/* Toolbar stats block — the "at-a-glance" dashboard in the top right. */
+.kensa-toolbar-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.kensa-toolbar-stat {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.05;
+  min-width: 42px;
+}
+
+.kensa-toolbar-stat-value {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.kensa-toolbar-stat-label {
+  font-size: 9px;
+  color: var(--kensa-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 1px;
+}
+
+.kensa-toolbar-stat-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--kensa-border-subtle);
+}
+
+.kensa-toolbar-stat-value-primary { color: var(--kensa-primary-strong); }
+.kensa-toolbar-stat-value-accent  { color: var(--kensa-accent-strong); }
+.kensa-toolbar-stat-value-success { color: var(--kensa-success); }
+.kensa-toolbar-stat-value-warning { color: var(--kensa-accent-strong); }
+
+/* Legacy row-count class — kept in case anything still renders it. */
 .kensa-row-count {
   color: var(--kensa-muted);
   font-variant-numeric: tabular-nums;
@@ -185,44 +349,42 @@
 }
 
 .kensa-icon-btn {
-  /* Square toolbar button with plenty of hit area. The child SVG icon is
-     centered and inherits currentColor. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   background: transparent;
-  color: var(--vscode-icon-foreground, var(--vscode-foreground, inherit));
+  color: var(--kensa-muted);
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--kensa-radius-sm);
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+  transition: background var(--kensa-motion), color var(--kensa-motion), transform var(--kensa-motion);
 }
 
 .kensa-icon-btn:hover {
-  background: var(--vscode-toolbar-hoverBackground, var(--kensa-row-hover));
-  color: var(--vscode-foreground, inherit);
+  background: var(--kensa-surface-2);
+  color: var(--kensa-text);
 }
 
 .kensa-icon-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.94);
 }
 
 .kensa-icon-btn:focus-visible {
-  outline: 1px solid var(--kensa-accent);
+  outline: 2px solid var(--kensa-primary);
   outline-offset: 1px;
 }
 
 .kensa-icon-btn-active {
-  background: var(--vscode-toolbar-activeBackground, var(--kensa-selection));
-  color: var(--kensa-accent);
+  background: var(--kensa-primary-soft);
+  color: var(--kensa-primary-strong);
+  border-color: rgba(24, 129, 196, 0.3);
 }
 
 .kensa-icon-btn-active:hover {
-  background: var(--vscode-toolbar-activeBackground, var(--kensa-selection));
-  filter: brightness(1.15);
+  background: rgba(24, 129, 196, 0.2);
 }
 
 .kensa-icon-btn svg {
@@ -235,22 +397,26 @@
   display: flex;
   flex: 1;
   min-height: 0;
+  gap: 0;
 }
 
 .kensa-sidebar {
-  width: 280px;
-  min-width: 240px;
-  border-right: 1px solid var(--kensa-border);
+  width: 300px;
+  min-width: 260px;
+  border-right: 1px solid var(--kensa-border-subtle);
   overflow-y: auto;
-  padding: 10px 12px;
+  padding: 14px 14px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
+  background: var(--kensa-surface-0);
+  backdrop-filter: var(--kensa-blur);
+  -webkit-backdrop-filter: var(--kensa-blur);
 }
 
 .kensa-sidebar-right {
   border-right: none;
-  border-left: 1px solid var(--kensa-border);
+  border-left: 1px solid var(--kensa-border-subtle);
 }
 
 .kensa-main {
@@ -263,15 +429,18 @@
 
 .kensa-placeholder {
   color: var(--kensa-muted);
-  padding: 12px;
+  padding: 14px 16px;
   font-style: italic;
+  font-size: 12px;
 }
 
 .kensa-error-banner {
-  padding: 8px 12px;
-  background: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.1));
-  color: var(--vscode-inputValidation-errorForeground, inherit);
-  border-bottom: 1px solid var(--vscode-inputValidation-errorBorder, var(--kensa-border));
+  padding: 10px 14px;
+  background: rgba(255, 92, 127, 0.12);
+  color: var(--kensa-danger);
+  border-bottom: 1px solid rgba(255, 92, 127, 0.25);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 /* Data grid -----------------------------------------------------------------*/
@@ -284,11 +453,12 @@
 }
 
 .kensa-preview-banner {
-  background: var(--vscode-editorWarning-background, rgba(255, 204, 0, 0.12));
-  color: var(--vscode-editorWarning-foreground, inherit);
-  border-bottom: 1px solid var(--vscode-editorWarning-border, var(--kensa-border));
-  padding: 4px 12px;
+  background: linear-gradient(90deg, var(--kensa-accent-soft), rgba(235, 7, 140, 0.04));
+  color: var(--kensa-accent-strong);
+  border-bottom: 1px solid rgba(235, 7, 140, 0.2);
+  padding: 6px 14px;
   font-size: 11px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
@@ -307,19 +477,23 @@
 .kensa-grid-header {
   display: flex;
   border-bottom: 1px solid var(--kensa-border);
-  background: var(--vscode-editor-background);
+  /* Glass backdrop so the sticky header blurs content scrolling under it. */
+  background: linear-gradient(
+    180deg,
+    rgba(30, 30, 30, 0.88) 0%,
+    rgba(30, 30, 30, 0.75) 100%
+  );
+  backdrop-filter: var(--kensa-blur);
+  -webkit-backdrop-filter: var(--kensa-blur);
   position: sticky;
   top: 0;
   z-index: 3;
-}
-
-.kensa-grid-rows {
-  /* height + width set inline — this just establishes the stacking context
-     for the absolutely-positioned rows. */
+  box-shadow: 0 1px 0 var(--kensa-border-subtle);
 }
 
 .kensa-row {
-  border-bottom: 1px solid var(--kensa-border);
+  border-bottom: 1px solid var(--kensa-border-subtle);
+  transition: background 120ms ease;
 }
 
 .kensa-row-alt {
@@ -331,54 +505,146 @@
 }
 
 .kensa-row-number {
-  color: var(--kensa-muted);
+  color: var(--kensa-text-subtle);
   text-align: right;
-  padding: 6px 8px;
+  padding: 7px 10px;
   font-variant-numeric: tabular-nums;
-  border-right: 1px solid var(--kensa-border);
-  font-size: 11px;
+  border-right: 1px solid var(--kensa-border-subtle);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.kensa-row-number-clickable {
+  cursor: pointer;
+  transition: background var(--kensa-motion), color var(--kensa-motion);
+}
+
+.kensa-row-number-clickable:hover {
+  background: var(--kensa-accent-soft);
+  color: var(--kensa-accent-strong);
+  font-weight: 700;
 }
 
 .kensa-row-number-header {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .kensa-cell {
-  padding: 6px 8px;
-  border-right: 1px solid var(--kensa-border);
+  padding: 7px 10px;
+  border-right: 1px solid var(--kensa-border-subtle);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  cursor: default;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+/* Excel-style alignment hints. Column dtype drives both the cell and
+ * the matching column-header label alignment — matching Excel's
+ * convention makes numbers-stored-as-strings visually stand out
+ * (they'll align left even though they look numeric).
+ * Numeric cells also use tabular-nums so digits line up cleanly column
+ * to column even when the value widths differ. */
+.kensa-cell-align-left,
+.kensa-col-header-align-left .kensa-col-name { text-align: left; }
+.kensa-cell-align-right,
+.kensa-col-header-align-right .kensa-col-name { text-align: right; }
+.kensa-cell-align-center,
+.kensa-col-header-align-center .kensa-col-name { text-align: center; }
+
+.kensa-cell-align-right {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* The column-name line sits in a flex container with a menu button on
+ * the right, so we need `justify-content` (not just text-align) to move
+ * the name across. */
+.kensa-col-header-align-right .kensa-col-header-top { flex-direction: row-reverse; }
+.kensa-col-header-align-center .kensa-col-header-top { justify-content: center; }
+
+.kensa-cell:hover {
+  background: rgba(24, 129, 196, 0.06);
 }
 
 .kensa-cell-missing {
-  color: var(--kensa-muted);
+  color: var(--kensa-text-subtle);
   font-style: italic;
 }
 
+/* Pill treatment for the dtype-aware missing label inside a cell.
+ * Italic + smaller + dotted underline keeps the label obviously
+ * "not data": a lone em-dash could be mistaken for an actual minus
+ * sign or legitimate value in a numeric column; a lowercase italic
+ * "nan" / "nat" / "null" / "none" with a dotted underline reads as
+ * "this cell is absent" at a glance. The subtle pink tint on
+ * dtype-specific labels (NaN in numeric, NaT in datetime, etc.)
+ * keeps them distinguishable even in grid rows whose colours shift. */
+.kensa-missing-label {
+  display: inline-block;
+  font-style: italic;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  opacity: 0.72;
+  text-decoration: underline dotted rgba(255, 255, 255, 0.28);
+  text-underline-offset: 2px;
+  padding: 0 2px;
+  color: var(--kensa-text-subtle);
+  font-family: var(--vscode-editor-font-family, monospace);
+  text-transform: lowercase;
+}
+
+.kensa-missing-label-nan  { color: rgba(235, 7, 140, 0.75); }
+.kensa-missing-label-nat  { color: rgba(235, 7, 140, 0.75); }
+.kensa-missing-label-null { color: rgba(245, 184, 46, 0.75); }
+.kensa-missing-label-none { color: var(--kensa-text-subtle); }
+
 .kensa-cell-selected {
-  background: var(--kensa-selection);
+  background: var(--kensa-primary-soft);
+  box-shadow: inset 0 0 0 1px rgba(24, 129, 196, 0.35);
+}
+
+.kensa-cell-just-copied {
+  /* Flash used right after a left-click copies the cell. Animates back to
+     transparent so subsequent copies re-trigger the flash cleanly. */
+  animation: kensa-cell-copy-flash 640ms var(--kensa-ease);
+}
+
+@keyframes kensa-cell-copy-flash {
+  0% {
+    background: var(--kensa-accent-soft);
+    box-shadow: inset 0 0 0 2px var(--kensa-accent);
+  }
+  100% {
+    background: var(--kensa-primary-soft);
+    box-shadow: inset 0 0 0 1px rgba(24, 129, 196, 0.35);
+  }
 }
 
 .kensa-cell-placeholder::before {
   content: '…';
-  color: var(--kensa-muted);
+  color: var(--kensa-text-subtle);
 }
 
 /* Column header ------------------------------------------------------------*/
 .kensa-col-header {
   position: relative;
-  border-right: 1px solid var(--kensa-border);
-  padding: 6px 8px;
+  border-right: 1px solid var(--kensa-border-subtle);
+  padding: 8px 10px 6px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   user-select: none;
+  transition: background var(--kensa-motion);
+}
+
+.kensa-col-header:hover {
+  background: var(--kensa-surface-1);
 }
 
 .kensa-col-header-selected {
-  background: var(--kensa-selection);
+  background: var(--kensa-primary-soft);
+  box-shadow: inset 0 -2px 0 var(--kensa-primary);
 }
 
 .kensa-col-header-top {
@@ -390,9 +656,11 @@
 
 .kensa-col-name {
   font-weight: 600;
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--kensa-text);
 }
 
 .kensa-col-menu-btn {
@@ -401,35 +669,55 @@
   border: none;
   cursor: pointer;
   padding: 0 4px;
+  font-size: 12px;
+  border-radius: 4px;
+  transition: color var(--kensa-motion), background var(--kensa-motion);
+}
+
+.kensa-col-menu-btn:hover {
+  color: var(--kensa-text);
+  background: var(--kensa-surface-2);
 }
 
 .kensa-col-dtype {
   font-size: 10px;
-  color: var(--kensa-muted);
+  color: var(--kensa-primary-strong);
   text-transform: lowercase;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .kensa-col-insight {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-height: 54px;
+  gap: 3px;
+  /* Bumped from 58 → 72 so the stats row has headroom to wrap onto a
+     second line when the column is narrow. Without this, high-precision
+     percentages like "99.8% missing · 99.8% unique" get clipped. */
+  min-height: 72px;
   overflow: hidden;
 }
 
 .kensa-col-insight-viz {
   flex: 1;
-  min-height: 32px;
+  min-height: 34px;
   display: flex;
   align-items: flex-end;
   overflow: hidden;
 }
 
 .kensa-insight-placeholder {
-  height: 32px;
+  height: 34px;
   width: 100%;
-  background: var(--kensa-row-alt);
-  opacity: 0.5;
+  background: linear-gradient(90deg, var(--kensa-surface-0), var(--kensa-surface-2), var(--kensa-surface-0));
+  background-size: 200% 100%;
+  animation: kensa-shimmer 1.6s infinite;
+  border-radius: var(--kensa-radius-sm);
+}
+
+@keyframes kensa-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .kensa-col-resize-handle {
@@ -442,42 +730,51 @@
   z-index: 3;
 }
 
-/* Popover dropdown for the column header menu. Must be visually obvious so
-   it doesn't blend into the grid behind it — otherwise users mistake the
-   menu items for a current filter state. Uses the VS Code dropdown variables
-   when available so theming matches the host. */
+.kensa-col-resize-handle:hover {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--kensa-primary) 50%,
+    transparent
+  );
+  opacity: 0.5;
+}
+
+/* Popover dropdown — solid, readable surface. The earlier draft used
+ * `backdrop-filter` here but translucency over variable grid content
+ * hurt legibility: filter-op names and values lost contrast when a
+ * densely-coloured column sat behind the menu. The new treatment is
+ * a nearly-opaque dark surface with a subtle top-to-bottom gradient
+ * for depth. Border + large shadow carry the elevation cue instead. */
 .kensa-col-menu {
   position: absolute;
-  top: calc(100% + 2px);
+  top: calc(100% + 6px);
   right: 0;
   z-index: 100;
-  background: var(--vscode-menu-background, var(--vscode-dropdown-background, var(--vscode-editor-background)));
-  color: var(--vscode-menu-foreground, var(--vscode-dropdown-foreground, inherit));
-  border: 1px solid var(--vscode-menu-border, var(--vscode-dropdown-border, var(--kensa-border)));
-  border-radius: 4px;
+  background:
+    linear-gradient(180deg, #232326 0%, #1b1b1e 100%);
+  color: var(--kensa-text);
+  border: 1px solid var(--kensa-border-strong);
+  border-radius: var(--kensa-radius-md);
   display: flex;
   flex-direction: column;
-  min-width: 180px;
-  padding: 4px 0;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
-  /* Force this menu into its own stacking context so it paints above
-     sibling rows regardless of the parent sticky header's context. */
+  min-width: 240px;
+  max-width: 320px;
+  padding: 6px 0;
+  box-shadow: var(--kensa-shadow-lg);
   isolation: isolate;
 }
 
 .kensa-col-menu::before {
-  /* Tiny pointer-arrow on the top-right, anchoring the popover to its
-     trigger. Purely decorative — helps the user see that this is a
-     dropdown, not a row of data. */
   content: '';
   position: absolute;
   top: -6px;
-  right: 10px;
+  right: 14px;
   width: 10px;
   height: 10px;
-  background: inherit;
-  border-left: 1px solid var(--vscode-menu-border, var(--kensa-border));
-  border-top: 1px solid var(--vscode-menu-border, var(--kensa-border));
+  background: #232326;
+  border-left: 1px solid var(--kensa-border-strong);
+  border-top: 1px solid var(--kensa-border-strong);
   transform: rotate(45deg);
 }
 
@@ -485,85 +782,84 @@
   background: transparent;
   color: inherit;
   border: none;
-  padding: 6px 14px;
+  padding: 7px 16px;
   text-align: left;
   cursor: pointer;
   font-size: 12px;
   white-space: nowrap;
+  font-family: inherit;
+  transition: background var(--kensa-motion);
 }
 
 .kensa-col-menu button:hover,
 .kensa-col-menu button:focus-visible {
-  background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground, var(--kensa-row-hover)));
-  color: var(--vscode-menu-selectionForeground, inherit);
+  background: var(--kensa-surface-hover);
   outline: none;
 }
 
 .kensa-col-menu-divider {
   height: 1px;
-  background: var(--vscode-menu-separatorBackground, var(--kensa-border));
-  margin: 4px 6px;
+  background: var(--kensa-border-subtle);
+  margin: 4px 10px;
 }
 
 .kensa-col-menu-section {
-  font-size: 10px;
+  font-size: 9px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--kensa-muted);
-  padding: 4px 14px 2px;
-  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--kensa-text-subtle);
+  padding: 6px 16px 4px;
+  font-weight: 700;
 }
 
 .kensa-col-menu-icon {
   display: inline-block;
   width: 16px;
-  color: var(--kensa-muted);
+  color: var(--kensa-text-subtle);
   text-align: center;
-  margin-right: 2px;
+  margin-right: 4px;
 }
 
 .kensa-col-menu-toggle-active {
-  background: var(--vscode-list-activeSelectionBackground, rgba(14, 99, 156, 0.25));
-  color: var(--vscode-list-activeSelectionForeground, inherit);
+  background: var(--kensa-primary-soft);
+  color: var(--kensa-text);
 }
 
 .kensa-col-menu-toggle-active .kensa-col-menu-icon {
-  color: var(--vscode-charts-green, #89d185);
+  color: var(--kensa-primary-strong);
   font-weight: 700;
 }
 
 .kensa-col-menu-danger {
-  color: var(--vscode-errorForeground, #f48771);
+  color: var(--kensa-accent);
 }
 
 .kensa-col-menu-danger:hover,
 .kensa-col-menu-danger:focus-visible {
-  background: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.1)) !important;
-  color: var(--vscode-errorForeground, #f48771) !important;
+  background: var(--kensa-accent-soft) !important;
+  color: var(--kensa-accent-strong) !important;
 }
 
-/* Small dot next to the column name when that column has an active filter. */
 .kensa-col-filter-dot {
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   margin-right: 6px;
-  background: var(--vscode-statusBarItem-warningBackground, #ffbe00);
+  background: var(--kensa-accent);
+  box-shadow: 0 0 6px var(--kensa-accent-glow);
   vertical-align: middle;
 }
 
 .kensa-col-header-filtered {
   background: linear-gradient(
     to bottom,
-    var(--vscode-statusBarItem-warningBackground, rgba(255, 190, 0, 0.1)) 0%,
-    transparent 6px
+    var(--kensa-accent-soft) 0%,
+    transparent 10px
   );
 }
 
 .kensa-col-menu-scrim {
-  /* Full-screen transparent overlay that closes the menu when the user
-     clicks anywhere outside it. */
   position: fixed;
   inset: 0;
   z-index: 99;
@@ -576,20 +872,30 @@
   align-items: flex-end;
   height: 100%;
   width: 100%;
-  gap: 1px;
+  gap: 2px;
 }
 
 .kensa-hist-bar {
   flex: 1;
-  background: var(--kensa-accent);
-  min-height: 1px;
-  opacity: 0.75;
+  background: linear-gradient(
+    180deg,
+    var(--kensa-primary-strong),
+    var(--kensa-primary)
+  );
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+  opacity: 0.85;
+  transition: opacity 120ms ease;
+}
+
+.kensa-hist-bar:hover {
+  opacity: 1;
 }
 
 .kensa-freq {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
   justify-content: flex-end;
 }
@@ -597,7 +903,7 @@
 .kensa-freq-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   font-size: 10px;
 }
 
@@ -606,53 +912,94 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--kensa-muted);
 }
 
 .kensa-freq-bar-wrap {
   flex: 1;
-  height: 6px;
-  background: var(--kensa-row-alt);
+  height: 7px;
+  background: var(--kensa-surface-1);
+  border-radius: 3px;
+  overflow: hidden;
 }
 
 .kensa-freq-bar {
   height: 100%;
-  background: var(--kensa-accent);
-  opacity: 0.75;
+  background: linear-gradient(
+    90deg,
+    var(--kensa-primary),
+    var(--kensa-primary-strong)
+  );
+  opacity: 0.9;
+  border-radius: 3px;
 }
 
 .kensa-insight-stats {
-  font-size: 9px;
-  color: var(--kensa-muted);
-  line-height: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Wraps to a second line when the column is too narrow for one-line.
+     Using flex-wrap here (rather than just `white-space: nowrap` +
+     overflow: hidden) means the percentages never get truncated —
+     they spill onto row 2 gracefully instead. Each child span stays
+     nowrap individually so we don't wrap in the middle of "14%". */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  font-size: 10px;
+  line-height: 13px;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--kensa-muted);
 }
 
+.kensa-insight-stats > span {
+  white-space: nowrap;
+}
+
+.kensa-insight-stat-unique { color: var(--kensa-primary-strong); font-weight: 600; }
+.kensa-insight-stat-missing-ok { color: var(--kensa-muted); }
+.kensa-insight-stat-missing-warn { color: var(--kensa-accent); font-weight: 600; }
+.kensa-insight-stat-sep { color: var(--kensa-text-subtle); }
+
 /* Summary panel ------------------------------------------------------------*/
+.kensa-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 .kensa-summary-title {
-  font-weight: 600;
-  font-size: 14px;
-  margin-bottom: 4px;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kensa-summary-sub {
-  font-size: 11px;
-  color: var(--kensa-muted);
-  margin-bottom: 10px;
+  font-size: 10px;
+  color: var(--kensa-primary-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  margin-bottom: 8px;
 }
 
+/* Legacy definition-list layout — kept for now but visually updated. */
 .kensa-summary-dl {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 4px 10px;
+  gap: 6px 12px;
   margin: 0;
 }
 
 .kensa-summary-dl dt {
   color: var(--kensa-muted);
-  font-size: 11px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  align-self: center;
 }
 
 .kensa-summary-dl dd {
@@ -660,29 +1007,179 @@
   font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .kensa-summary-hint {
   margin-top: 12px;
-  color: var(--kensa-muted);
+  color: var(--kensa-text-subtle);
   font-style: italic;
+  font-size: 11px;
+  padding: 10px 12px;
+  border-radius: var(--kensa-radius-md);
+  background: var(--kensa-surface-1);
+  border: 1px solid var(--kensa-border-subtle);
+}
+
+/* Stat card grid used by the dataset-summary hero. */
+.kensa-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.kensa-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--kensa-radius-md);
+  background: var(--kensa-surface-1);
+  border: 1px solid var(--kensa-border-subtle);
+  backdrop-filter: var(--kensa-blur);
+  -webkit-backdrop-filter: var(--kensa-blur);
+  transition: transform var(--kensa-motion), border-color var(--kensa-motion);
+}
+
+.kensa-stat-card:hover {
+  border-color: var(--kensa-border);
+  transform: translateY(-1px);
+}
+
+.kensa-stat-card-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--kensa-muted);
+  font-weight: 600;
+}
+
+.kensa-stat-card-value {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--kensa-text);
+  line-height: 1.15;
+}
+
+.kensa-stat-card-sub {
+  font-size: 10px;
+  color: var(--kensa-muted);
+  margin-top: 1px;
+}
+
+.kensa-stat-card-accent .kensa-stat-card-value { color: var(--kensa-accent-strong); }
+.kensa-stat-card-primary .kensa-stat-card-value { color: var(--kensa-primary-strong); }
+.kensa-stat-card-success .kensa-stat-card-value { color: var(--kensa-success); }
+
+/* Hero block in the column-detail view — primary number + secondary grid. */
+.kensa-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: var(--kensa-radius-lg);
+  background:
+    linear-gradient(
+      135deg,
+      var(--kensa-primary-soft) 0%,
+      var(--kensa-surface-1) 100%
+    );
+  border: 1px solid var(--kensa-border);
+  backdrop-filter: var(--kensa-blur);
+  -webkit-backdrop-filter: var(--kensa-blur);
+}
+
+.kensa-hero-accent {
+  background:
+    linear-gradient(
+      135deg,
+      var(--kensa-accent-soft) 0%,
+      var(--kensa-surface-1) 100%
+    );
+}
+
+.kensa-hero-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--kensa-muted);
+  font-weight: 700;
+}
+
+.kensa-hero-value {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--kensa-primary-strong);
+  line-height: 1.05;
+}
+
+.kensa-hero-accent .kensa-hero-value {
+  color: var(--kensa-accent-strong);
+}
+
+.kensa-hero-sub {
+  font-size: 11px;
+  color: var(--kensa-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Operations panel ---------------------------------------------------------*/
 .kensa-operations-header {
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .kensa-search,
 .kensa-input {
   width: 100%;
-  padding: 5px 8px;
-  background: var(--kensa-input-bg);
-  color: var(--kensa-input-fg);
-  border: 1px solid var(--kensa-input-border);
-  border-radius: 3px;
+  padding: 8px 12px;
+  background: var(--kensa-surface-1);
+  color: var(--kensa-text);
+  border: 1px solid var(--kensa-border-subtle);
+  border-radius: var(--kensa-radius-sm);
   font-family: var(--vscode-font-family);
   font-size: 12px;
+  transition: border-color var(--kensa-motion), background var(--kensa-motion);
+}
+
+/* Native <select>s also use `.kensa-input`. Stripping the browser
+ * appearance makes them match our dark theme — the browser default
+ * shows a white dropdown on dark backgrounds, which stuck out in
+ * the operations-panel forms. A tiny chevron glyph stands in for the
+ * native dropdown arrow. Options inside the dropdown still inherit
+ * the OS theme on some platforms — that's a browser limitation —
+ * but the closed state and trigger are now consistent. */
+select.kensa-input {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding-right: 28px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--kensa-muted) 50%),
+    linear-gradient(135deg, var(--kensa-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 13px) calc(50% - 1px),
+    calc(100% - 9px) calc(50% - 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+select.kensa-input option {
+  background: #232326;
+  color: var(--kensa-text);
+}
+
+.kensa-search:focus,
+.kensa-input:focus {
+  outline: none;
+  border-color: var(--kensa-primary);
+  background: var(--kensa-surface-2);
+  box-shadow: 0 0 0 3px rgba(24, 129, 196, 0.18);
 }
 
 .kensa-textarea {
@@ -693,15 +1190,16 @@
 .kensa-operations-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .kensa-op-category-title {
-  font-size: 10px;
+  font-size: 9px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--kensa-muted);
-  margin-bottom: 4px;
+  letter-spacing: 0.1em;
+  color: var(--kensa-primary-strong);
+  margin-bottom: 6px;
+  font-weight: 700;
 }
 
 .kensa-op-category ul {
@@ -720,99 +1218,122 @@
   background: transparent;
   color: inherit;
   border: 1px solid transparent;
-  padding: 4px 8px;
+  padding: 6px 10px;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: var(--kensa-radius-sm);
+  font-size: 12px;
+  transition: background var(--kensa-motion), border-color var(--kensa-motion);
 }
 
 .kensa-op-item:hover {
-  background: var(--kensa-row-hover);
+  background: var(--kensa-surface-2);
+  border-color: var(--kensa-border-subtle);
 }
 
 .kensa-op-title {
-  font-weight: 600;
-  margin-top: 8px;
+  font-weight: 700;
+  margin-top: 10px;
+  font-size: 14px;
+  letter-spacing: -0.01em;
 }
 
 .kensa-op-desc {
   font-size: 11px;
   color: var(--kensa-muted);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  line-height: 1.45;
 }
 
 .kensa-linky {
   background: transparent;
-  color: var(--kensa-accent);
+  color: var(--kensa-primary-strong);
   border: none;
   padding: 2px 0;
   cursor: pointer;
   font-size: 11px;
+  font-weight: 500;
+}
+
+.kensa-linky:hover {
+  color: var(--kensa-primary);
+  text-decoration: underline;
 }
 
 .kensa-param-form {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .kensa-param-label {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--kensa-muted);
   display: block;
   margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
 }
 
 .kensa-param-desc {
   font-size: 10px;
-  color: var(--kensa-muted);
+  color: var(--kensa-text-subtle);
 }
 
 .kensa-param-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
-  margin-top: 4px;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .kensa-btn {
-  background: transparent;
-  color: inherit;
+  background: var(--kensa-surface-2);
+  color: var(--kensa-text);
   border: 1px solid var(--kensa-border);
-  padding: 5px 12px;
-  border-radius: 3px;
+  padding: 7px 14px;
+  border-radius: var(--kensa-radius-sm);
   cursor: pointer;
   font-family: var(--vscode-font-family);
+  font-size: 12px;
+  font-weight: 500;
+  transition: all var(--kensa-motion);
 }
 
 .kensa-btn-primary {
-  background: var(--kensa-button-bg);
-  color: var(--kensa-button-fg);
+  background: linear-gradient(135deg, var(--kensa-primary), var(--kensa-primary-strong));
+  color: #ffffff;
   border-color: transparent;
+  box-shadow: 0 2px 8px var(--kensa-primary-glow);
 }
 
 .kensa-btn:hover {
-  background: var(--kensa-row-hover);
+  background: var(--kensa-surface-3);
+  border-color: var(--kensa-border-strong);
 }
 
 .kensa-btn-primary:hover {
-  background: var(--vscode-button-hoverBackground, var(--kensa-button-bg));
+  filter: brightness(1.1);
+  box-shadow: 0 4px 14px var(--kensa-primary-glow);
+  transform: translateY(-1px);
 }
 
 .kensa-multicol {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: 160px;
+  gap: 4px;
+  max-height: 180px;
   overflow-y: auto;
-  border: 1px solid var(--kensa-input-border);
-  padding: 4px;
-  border-radius: 3px;
+  border: 1px solid var(--kensa-border-subtle);
+  padding: 6px;
+  border-radius: var(--kensa-radius-sm);
+  background: var(--kensa-surface-1);
 }
 
 .kensa-checkbox {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 12px;
   cursor: pointer;
 }
@@ -820,26 +1341,28 @@
 .kensa-examples {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .kensa-example-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .kensa-arrow {
-  color: var(--kensa-muted);
+  color: var(--kensa-primary-strong);
+  font-weight: 600;
 }
 
 /* Steps panel --------------------------------------------------------------*/
 .kensa-steps-title {
-  font-size: 10px;
+  font-size: 9px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--kensa-muted);
-  margin-bottom: 4px;
+  letter-spacing: 0.1em;
+  color: var(--kensa-primary-strong);
+  margin-bottom: 6px;
+  font-weight: 700;
 }
 
 .kensa-steps-list {
@@ -848,7 +1371,7 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .kensa-step {
@@ -862,58 +1385,74 @@
   background: transparent;
   color: inherit;
   border: 1px solid transparent;
-  padding: 4px 8px;
+  padding: 6px 10px;
   text-align: left;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: var(--kensa-radius-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 12px;
+  transition: all var(--kensa-motion);
+}
+
+.kensa-step-label:hover {
+  background: var(--kensa-surface-2);
 }
 
 .kensa-step-last .kensa-step-label {
-  background: var(--kensa-row-alt);
+  background: var(--kensa-primary-soft);
+  border-color: rgba(24, 129, 196, 0.2);
 }
 
 .kensa-step-num {
-  color: var(--kensa-muted);
-  margin-right: 4px;
+  color: var(--kensa-text-subtle);
+  margin-right: 6px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .kensa-step-undo {
   background: transparent;
   border: none;
-  color: var(--kensa-muted);
+  color: var(--kensa-text-subtle);
   cursor: pointer;
-  padding: 0 6px;
+  padding: 4px 8px;
+  border-radius: var(--kensa-radius-sm);
+  transition: all var(--kensa-motion);
+  font-size: 14px;
 }
 
 .kensa-step-undo:hover {
-  color: inherit;
+  color: var(--kensa-accent);
+  background: var(--kensa-accent-soft);
 }
 
 /* Code preview -------------------------------------------------------------*/
 .kensa-code-preview {
-  border-top: 1px solid var(--kensa-border);
+  border-top: 1px solid var(--kensa-border-subtle);
   max-height: 40%;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  background: var(--kensa-surface-0);
 }
 
 .kensa-code-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--kensa-border);
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--kensa-border-subtle);
+  background: var(--kensa-surface-1);
 }
 
 .kensa-code-title {
-  color: var(--kensa-muted);
-  font-size: 11px;
+  color: var(--kensa-primary-strong);
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
+  font-weight: 700;
 }
 
 .kensa-code-actions {
@@ -934,38 +1473,741 @@
   min-height: 0;
 }
 
-/* Python highlighter tokens — colors match VS Code's default dark+ theme but
-   stay theme-aware via token variables when available. */
-.kensa-code-editor .py-keyword {
-  color: var(--vscode-debugTokenExpression-name, #c586c0);
-}
-.kensa-code-editor .py-builtin {
-  color: var(--vscode-symbolIcon-functionForeground, #4ec9b0);
-}
-.kensa-code-editor .py-string {
-  color: var(--vscode-debugTokenExpression-string, #ce9178);
-}
-.kensa-code-editor .py-number {
-  color: var(--vscode-debugTokenExpression-number, #b5cea8);
-}
-.kensa-code-editor .py-comment {
-  color: var(--vscode-debugConsole-sourceForeground, #6a9955);
-  font-style: italic;
-}
-.kensa-code-editor .py-op {
-  color: var(--vscode-symbolIcon-operatorForeground, #d4d4d4);
-}
+/* Python syntax tokens. */
+.kensa-code-editor .py-keyword { color: #C678DD; }
+.kensa-code-editor .py-builtin { color: #56B6C2; }
+.kensa-code-editor .py-string  { color: #98C379; }
+.kensa-code-editor .py-number  { color: #D19A66; }
+.kensa-code-editor .py-comment { color: var(--kensa-text-subtle); font-style: italic; }
+.kensa-code-editor .py-op      { color: var(--kensa-text); }
 
 /* Diff overlay -------------------------------------------------------------*/
 .diff-modified {
-  background: var(--vscode-diffEditor-insertedTextBackground, rgba(155, 185, 85, 0.2));
+  background: rgba(235, 7, 140, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(235, 7, 140, 0.3);
 }
 
 .diff-added {
-  background: var(--vscode-diffEditor-insertedLineBackground, rgba(155, 185, 85, 0.1));
+  background: rgba(74, 211, 149, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(74, 211, 149, 0.3);
 }
 
 .diff-removed {
-  background: var(--vscode-diffEditor-removedTextBackground, rgba(255, 0, 0, 0.15));
+  background: rgba(255, 92, 127, 0.15);
   text-decoration: line-through;
+}
+
+/* Toast --------------------------------------------------------------------*/
+.kensa-toast-region {
+  /* Anchors all active toasts in the bottom-right without blocking clicks. */
+  position: fixed;
+  bottom: 18px;
+  right: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.kensa-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--kensa-radius-md);
+  background: rgba(30, 30, 30, 0.92);
+  color: var(--kensa-text);
+  border: 1px solid var(--kensa-border);
+  backdrop-filter: var(--kensa-blur-heavy);
+  -webkit-backdrop-filter: var(--kensa-blur-heavy);
+  box-shadow: var(--kensa-shadow-lg);
+  font-size: 12px;
+  max-width: 360px;
+  pointer-events: auto;
+  animation: kensa-toast-in 220ms var(--kensa-ease);
+}
+
+.kensa-toast-leaving {
+  animation: kensa-toast-out 200ms var(--kensa-ease) forwards;
+}
+
+.kensa-toast-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--kensa-primary-soft);
+  color: var(--kensa-primary-strong);
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.kensa-toast-label {
+  color: var(--kensa-muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.kensa-toast-value {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  color: var(--kensa-text);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes kensa-toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+@keyframes kensa-toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(6px); }
+}
+
+/* Advanced filter form — lives inside the column menu, under the
+ * quick-filter section. A compact operator dropdown + value input +
+ * case-insensitive checkbox + Apply/Clear row, all themed to match the
+ * dark menu background. */
+.kensa-adv-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 14px 10px;
+}
+
+.kensa-adv-filter-row {
+  display: flex;
+  gap: 6px;
+}
+
+.kensa-adv-filter-row > * {
+  min-width: 0;
+}
+
+.kensa-adv-filter .kensa-select,
+.kensa-adv-filter .kensa-input {
+  font-size: 11px;
+  padding: 5px 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--kensa-border-subtle);
+  color: var(--kensa-text);
+  border-radius: var(--kensa-radius-sm);
+  font-family: inherit;
+  width: 100%;
+}
+
+.kensa-adv-filter .kensa-select:focus,
+.kensa-adv-filter .kensa-input:focus {
+  outline: none;
+  border-color: var(--kensa-primary);
+  box-shadow: 0 0 0 2px rgba(24, 129, 196, 0.2);
+}
+
+.kensa-adv-filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.kensa-adv-filter-btn {
+  flex: 1;
+  padding: 5px 10px;
+  font-size: 11px;
+  border-radius: var(--kensa-radius-sm);
+  border: 1px solid var(--kensa-border-subtle);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--kensa-text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--kensa-motion);
+}
+
+.kensa-adv-filter-btn:hover {
+  background: var(--kensa-surface-2);
+  border-color: var(--kensa-border-strong);
+}
+
+.kensa-adv-filter-btn-primary {
+  background: linear-gradient(135deg, var(--kensa-primary), var(--kensa-primary-strong));
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+
+.kensa-adv-filter-btn-primary:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 2px 8px var(--kensa-primary-glow);
+}
+
+.kensa-adv-filter-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--kensa-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.kensa-adv-filter-checkbox input[type="checkbox"] {
+  accent-color: var(--kensa-primary);
+  margin: 0;
+}
+
+/* Active-filter chip row shown above the Advanced form — one chip per
+ * currently-applied filter on this column, with a × to remove each. */
+.kensa-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 14px 2px;
+}
+
+.kensa-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 8px;
+  border-radius: var(--kensa-radius-pill);
+  background: var(--kensa-primary-soft);
+  border: 1px solid rgba(24, 129, 196, 0.3);
+  color: var(--kensa-primary-strong);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.kensa-filter-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity var(--kensa-motion), background var(--kensa-motion);
+}
+
+.kensa-filter-chip-remove:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Themed column picker — a custom combobox that replaces the native
+ * `<select>` used in the operations panel. Supports single or multi
+ * selection plus a built-in search field. Rendered as: a pill-shaped
+ * trigger that opens a floating panel with a search input and a
+ * scrollable list. Matches the dark theme instead of showing the
+ * browser-default white dropdown. */
+.kensa-col-picker {
+  position: relative;
+  width: 100%;
+}
+
+.kensa-col-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--kensa-surface-1);
+  border: 1px solid var(--kensa-border-subtle);
+  border-radius: var(--kensa-radius-sm);
+  color: var(--kensa-text);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  transition: all var(--kensa-motion);
+}
+
+.kensa-col-picker-trigger:hover {
+  border-color: var(--kensa-border);
+  background: var(--kensa-surface-2);
+}
+
+.kensa-col-picker-trigger:focus-visible,
+.kensa-col-picker-open .kensa-col-picker-trigger {
+  outline: none;
+  border-color: var(--kensa-primary);
+  box-shadow: 0 0 0 3px rgba(24, 129, 196, 0.18);
+}
+
+.kensa-col-picker-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kensa-col-picker-placeholder {
+  color: var(--kensa-text-subtle);
+  font-style: italic;
+}
+
+.kensa-col-picker-chevron {
+  color: var(--kensa-muted);
+  font-size: 10px;
+  transition: transform var(--kensa-motion);
+  flex-shrink: 0;
+}
+
+.kensa-col-picker-open .kensa-col-picker-chevron {
+  transform: rotate(180deg);
+}
+
+.kensa-col-picker-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--kensa-radius-pill);
+  background: var(--kensa-primary-soft);
+  color: var(--kensa-primary-strong);
+  font-size: 10px;
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.kensa-col-picker-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: linear-gradient(180deg, #232326 0%, #1b1b1e 100%);
+  border: 1px solid var(--kensa-border-strong);
+  border-radius: var(--kensa-radius-md);
+  box-shadow: var(--kensa-shadow-lg);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+}
+
+.kensa-col-picker-search {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--kensa-border-subtle);
+  border-radius: var(--kensa-radius-sm);
+  color: var(--kensa-text);
+  font-family: inherit;
+  width: 100%;
+}
+
+.kensa-col-picker-search:focus {
+  outline: none;
+  border-color: var(--kensa-primary);
+  box-shadow: 0 0 0 2px rgba(24, 129, 196, 0.2);
+}
+
+.kensa-col-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0;
+  overflow-y: auto;
+  max-height: 240px;
+}
+
+.kensa-col-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--kensa-radius-sm);
+  cursor: pointer;
+  transition: background var(--kensa-motion);
+}
+
+.kensa-col-picker-option:hover,
+.kensa-col-picker-option-active {
+  background: var(--kensa-surface-2);
+}
+
+.kensa-col-picker-option-selected {
+  background: var(--kensa-primary-soft);
+  color: var(--kensa-text);
+}
+
+.kensa-col-picker-option-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--kensa-border);
+  font-size: 10px;
+  color: transparent;
+  flex-shrink: 0;
+  transition: all var(--kensa-motion);
+}
+
+.kensa-col-picker-option-selected .kensa-col-picker-option-check {
+  background: var(--kensa-primary);
+  border-color: var(--kensa-primary);
+  color: #fff;
+}
+
+.kensa-col-picker-option-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.kensa-col-picker-option-dtype {
+  font-size: 10px;
+  color: var(--kensa-text-subtle);
+  font-family: var(--vscode-editor-font-family, monospace);
+  flex-shrink: 0;
+}
+
+.kensa-col-picker-empty {
+  padding: 14px 10px;
+  text-align: center;
+  color: var(--kensa-text-subtle);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.kensa-col-picker-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  background: transparent;
+}
+
+/* Column search pill in the toolbar — compact, glass pill, grows wider
+ * on focus so the user can type a longer query without visual crowding. */
+.kensa-col-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--kensa-surface-1);
+  border: 1px solid var(--kensa-border-subtle);
+  border-radius: var(--kensa-radius-pill);
+  transition: all var(--kensa-motion);
+}
+
+.kensa-col-search:focus-within {
+  background: var(--kensa-surface-2);
+  border-color: var(--kensa-primary);
+  box-shadow: 0 0 0 3px rgba(24, 129, 196, 0.15);
+}
+
+.kensa-col-search-icon {
+  color: var(--kensa-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.kensa-col-search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--kensa-text);
+  font-family: inherit;
+  font-size: 11px;
+  width: 120px;
+  transition: width var(--kensa-motion);
+}
+
+.kensa-col-search:focus-within .kensa-col-search-input {
+  width: 180px;
+}
+
+.kensa-col-search-input::placeholder {
+  color: var(--kensa-text-subtle);
+}
+
+.kensa-col-search-clear {
+  background: transparent;
+  border: none;
+  color: var(--kensa-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.kensa-col-search-clear:hover {
+  color: var(--kensa-accent);
+}
+
+/* Column-found highlight — a brief pink pulse on the matched column
+ * header after a search jump so the eye knows where to land. */
+.kensa-col-header-highlight {
+  animation: kensa-col-pulse 1200ms var(--kensa-ease);
+}
+
+@keyframes kensa-col-pulse {
+  0% {
+    box-shadow: inset 0 0 0 0 var(--kensa-accent);
+    background: var(--kensa-accent-soft);
+  }
+  50% {
+    box-shadow: inset 0 -3px 0 var(--kensa-accent);
+    background: rgba(235, 7, 140, 0.18);
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 var(--kensa-accent);
+    background: transparent;
+  }
+}
+
+/* Themed select — minimal custom dropdown that replaces native
+ * `<select>` in dark popover contexts. Both the trigger and the
+ * option list are rendered in our own DOM, so the option colours
+ * don't revert to the OS default the way native selects do. */
+.kensa-themed-select {
+  position: relative;
+  width: 100%;
+}
+
+.kensa-themed-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--kensa-border-subtle);
+  border-radius: var(--kensa-radius-sm);
+  color: var(--kensa-text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+  transition: all var(--kensa-motion);
+}
+
+.kensa-themed-select-trigger:hover {
+  border-color: var(--kensa-border);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.kensa-themed-select-trigger:focus-visible,
+.kensa-themed-select-open .kensa-themed-select-trigger {
+  outline: none;
+  border-color: var(--kensa-primary);
+  box-shadow: 0 0 0 2px rgba(24, 129, 196, 0.22);
+}
+
+.kensa-themed-select-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kensa-themed-select-chevron {
+  color: var(--kensa-muted);
+  font-size: 10px;
+  transition: transform var(--kensa-motion);
+  flex-shrink: 0;
+}
+
+.kensa-themed-select-open .kensa-themed-select-chevron {
+  transform: rotate(180deg);
+}
+
+.kensa-themed-select-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 299;
+  background: transparent;
+}
+
+.kensa-themed-select-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 300;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #232326 0%, #1b1b1e 100%);
+  border: 1px solid var(--kensa-border-strong);
+  border-radius: var(--kensa-radius-md);
+  box-shadow: var(--kensa-shadow-lg);
+}
+
+.kensa-themed-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--kensa-radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background var(--kensa-motion);
+}
+
+.kensa-themed-select-option:hover {
+  background: var(--kensa-surface-hover);
+}
+
+.kensa-themed-select-option-selected {
+  background: var(--kensa-primary-soft);
+  color: var(--kensa-text);
+}
+
+.kensa-themed-select-option-check {
+  width: 14px;
+  text-align: center;
+  color: var(--kensa-primary-strong);
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.kensa-themed-select-option-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Cell context menu — right-click on a cell pops this up at the cursor.
+ * Same solid-glass treatment as the column menu so they feel like one
+ * system. Items are standard menu rows with an optional hover hint
+ * right-aligned (keyboard shortcut hint, value snippet, etc.). */
+.kensa-context-menu {
+  position: fixed;
+  z-index: 500;
+  background: linear-gradient(180deg, #232326 0%, #1b1b1e 100%);
+  color: var(--kensa-text);
+  border: 1px solid var(--kensa-border-strong);
+  border-radius: var(--kensa-radius-md);
+  box-shadow: var(--kensa-shadow-lg);
+  padding: 5px 0;
+  min-width: 210px;
+  max-width: 320px;
+  isolation: isolate;
+}
+
+.kensa-context-menu-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 499;
+  background: transparent;
+}
+
+.kensa-context-menu-header {
+  padding: 4px 14px 6px;
+  font-size: 10px;
+  color: var(--kensa-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  border-bottom: 1px solid var(--kensa-border-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kensa-context-menu-header-value {
+  display: block;
+  margin-top: 3px;
+  color: var(--kensa-text);
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--vscode-editor-font-family, monospace);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kensa-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 14px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  transition: background var(--kensa-motion);
+}
+
+.kensa-context-menu-item:hover,
+.kensa-context-menu-item:focus-visible {
+  background: var(--kensa-surface-hover);
+  outline: none;
+}
+
+.kensa-context-menu-item-icon {
+  width: 16px;
+  color: var(--kensa-muted);
+  font-size: 12px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.kensa-context-menu-item-label {
+  flex: 1;
+}
+
+.kensa-context-menu-divider {
+  height: 1px;
+  background: var(--kensa-border-subtle);
+  margin: 4px 8px;
+}
+
+.kensa-context-menu-item-danger {
+  color: var(--kensa-accent);
+}
+
+.kensa-context-menu-item-danger:hover {
+  background: var(--kensa-accent-soft);
+  color: var(--kensa-accent-strong);
+}
+
+/* Scrollbar — subtle, glass-friendly. */
+.kensa-app ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.kensa-app ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.kensa-app ::-webkit-scrollbar-thumb {
+  background: var(--kensa-surface-2);
+  border-radius: var(--kensa-radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.kensa-app ::-webkit-scrollbar-thumb:hover {
+  background: var(--kensa-surface-3);
+  background-clip: padding-box;
 }

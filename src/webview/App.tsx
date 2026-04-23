@@ -5,6 +5,7 @@ import { OperationsPanel } from './components/OperationsPanel';
 import { StepsPanel } from './components/StepsPanel';
 import { CodePreview } from './components/CodePreview';
 import { Toolbar } from './components/Toolbar';
+import { ToastRegion } from './components/Toast';
 import { useKensaStore } from './state/store';
 import { onMessage, postMessage } from './vscodeApi';
 
@@ -132,6 +133,7 @@ export function App() {
           </aside>
         )}
       </div>
+      <ToastRegion />
     </div>
   );
 }
