@@ -4,6 +4,137 @@ All notable changes to Kensa are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Kensa follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] — 2026-04-23
+
+Design refresh release. Every UI surface now uses a cohesive palette
+built around a primary blue (`#1881C4`) and accent pink (`#EB078C`)
+layered over VS Code's dark editor background, with glassy translucent
+surfaces, larger radii, and a reworked stats vocabulary that answers
+"is this column healthy?" at a glance instead of reporting raw counts.
+
+### Added
+
+- **Data dashboard in the toolbar.** The top-right of the toolbar now
+  carries a three-up stat block — **Rows**, **Cols**, **Complete %**
+  — with large colour-coded numbers. The completeness figure turns
+  green at ≥95%, blue at ≥80%, pink below that, so data-quality
+  problems are visible before the user scrolls. Compact `1.2M` / `340K`
+  abbreviations keep huge datasets legible.
+- **Column search in the toolbar.** A new search pill next to the
+  filename finds a column by name (exact → prefix → contains) and
+  smooth-scrolls the grid to it, with a pink pulse on the matched
+  column so the eye lands in the right place. Debounced at 140ms so
+  typing doesn't whiplash the viewport; Enter forces an immediate
+  jump, Escape clears.
+- **Left-click copies a cell value.** _(Later tuned in 0.1.7 so
+  left-click only selects and copying is routed through the right-click
+  menu — see Changed section below.)_
+- **Right-click cell → context menu.** Copy cell / Copy row (TSV) /
+  Copy column (TSV); Filter equals / not equals / contains; Sort asc /
+  desc; Clear column filters. Menu is clamped to viewport so
+  right-clicking near edges doesn't clip it.
+- **Click row number to copy the whole row** as tab-separated text —
+  pastes directly into Excel or Google Sheets. Pink hover tint makes
+  the affordance discoverable.
+- **Toast region** bottom-right shows transient confirmation for copy
+  actions (cell / row / column / filter jump). Auto-dismisses after
+  ~1.4s; animates in and out with cubic-bezier easing.
+- **Advanced filter section** inside each column's popover menu:
+  operator + value + case-insensitive toggle, operator list scoped by
+  column dtype (numeric columns don't offer `contains`; text columns
+  don't offer `>` / `<`). Applied advanced filters appear as removable
+  chips at the top of the menu. Stacks with both the column's quick
+  filter and other advanced filters, all AND-combined.
+- **Themed column picker** (replaces native `<select>` + checkbox list
+  in `ParameterForm`): searchable, keyboard-navigable (↑/↓/Enter/Esc),
+  single and multi-select modes, dtype displayed next to each column.
+  [src/webview/components/ColumnPicker.tsx](src/webview/components/ColumnPicker.tsx).
+- **Themed dropdown** for small option lists
+  ([src/webview/components/ThemedSelect.tsx](src/webview/components/ThemedSelect.tsx))
+  — used in the Advanced filter operator so the option popup no longer
+  falls back to OS / browser styling inside dark popover menus.
+- **Dtype-aware missing-value rendering.** Missing cells now show
+  `nan` / `nat` / `null` / `none` based on the column dtype (pandas
+  sentinel conventions), italic + dotted-underlined + colour-tinted so
+  they read as "this cell is absent" and can't be confused with an
+  actual dash or data character.
+- **Excel-convention alignment** for cell and header text. Integers,
+  floats, datetimes, and timestamps right-align with tabular numerals;
+  booleans centre; text / object / categorical left-align. Headers
+  align to match their cells, so a column name visually sits above its
+  values. A column that *looks* numeric but aligns left is a string —
+  the Excel trick for spotting type mismatches at a glance.
+- **Filter-badge counter** on the toolbar filter pill. Shows the
+  current row count in accent pink next to the filter-count, so the
+  filter hit rate is visible without opening any panel.
+- **Hero stats + card grid** in the summary side panel. Dataset view
+  is now a 2×2 card grid (Rows / Columns / Complete / Missing) with
+  22-26px numbers. Column view auto-picks a headline: numeric columns
+  show a **Mean** hero with σ underneath, categorical columns show
+  **Unique %** with top value; any column with ≥20% missing flips to a
+  pink **Missing** hero overriding the default so data-quality issues
+  always surface first.
+- **Percentage-first quick-insight stats** on each column header.
+  `14% missing · 78% unique` replaces `missing 234 · distinct 512`;
+  missing percentage turns pink at ≥10%, unique percentage renders in
+  blue. Stats line flex-wraps to a second line when the column is
+  narrow, so the numbers never clip.
+
+### Changed
+
+- **Left-click no longer auto-copies** a cell value — it only selects
+  the cell and swaps the side-panel to that column's stats. Copying
+  is routed through the right-click context menu and the row-number
+  click, both of which still flash the cell and show a toast.
+- **Column menu closes on outside click.** Replaced the invisible scrim
+  (which was getting trapped by parent sticky / stacking contexts on
+  some layouts) with a `mousedown` listener on `document`. Clicks on
+  underlying cells now close the menu AND select the cell in one
+  gesture; clicks on popovers rendered at document scope (the themed
+  operator dropdown) are correctly excluded from the close check.
+- **Default column width** bumped 160 → 184px so the worst-case stats
+  row (`99.8% missing · 99.8% unique`) fits on a single line without
+  clipping; narrower columns flex-wrap to two lines rather than
+  truncating.
+- **Column menu** is now a solid dark surface (gradient `#232326 →
+  #1b1b1e`) with a larger corner radius, stronger border, and the
+  tooltip arrow glyph matching. The earlier glass treatment hurt
+  readability over variable grid content — the filter-op names and
+  value inputs were losing contrast when a colourful column was
+  visible behind the menu.
+- **Filter semantics** — a single column can now carry multiple
+  filters at once. Quick-filter ops (`is_missing` / `is_not_missing` /
+  `is_duplicated` / `is_unique`) remain mutually exclusive within
+  their set; advanced-filter ops stack freely with the quick filter
+  and with each other. Removing a filter is done by clicking its chip
+  × instead of by column.
+- **Completeness math is clamped** to `[0%, 100%]` in both the
+  toolbar stat and the summary panel card. Insights aren't refreshed
+  on filter change today, so a heavily-filtered view could produce
+  `totalMissing > totalCells` and yield a negative percentage —
+  clamping prevents the visible regression until the backend starts
+  emitting fresh insights with every filter.
+
+### Fixed
+
+- **Search icon in the column-search pill** now uses the shared
+  `SearchIcon` SVG matching the rest of the toolbar icon set, at the
+  same 12-14px stroke weight. The prior unicode `⌕` glyph rendered at
+  a wildly different size.
+- **Native `<select>`** option popups for enum parameters in the
+  operations panel no longer show with the OS default light styling —
+  appearance is stripped and the trigger gets a themed chevron.
+
+### Tests + CI
+
+- `c8` + `cargo-llvm-cov` coverage pipeline still runs on every push
+  and PR; Codecov upload under separate `rust` / `ts` flags.
+- Webview-side test coverage stable at 100% on `shared/messages`,
+  `shared/operations`, `notebookResolver`, `notebookArgParser`; total
+  51 TS + 15 Rust unit tests green in CI on all six release targets.
+
+---
+
 ## [0.1.6] — 2026-04-15
 
 ### Fixed
@@ -365,6 +496,7 @@ First public release (never reached the marketplace — see 0.1.1).
 
 ---
 
+[0.1.7]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.7
 [0.1.6]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.6
 [0.1.5]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.5
 [0.1.4]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.4

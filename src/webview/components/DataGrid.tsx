@@ -195,7 +195,9 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
     highlightTimerRef.current = window.setTimeout(() => {
       setHighlightedColumn(null);
     }, COLUMN_HIGHLIGHT_MS);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Only `scrollToColumnToken` is in the deps list on purpose — the
+    // effect should re-fire only when a new search is requested, not
+    // when `slice` / `columnWidths` change under us.
   }, [scrollToColumnToken]);
 
   useEffect(() => {

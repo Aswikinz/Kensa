@@ -20,7 +20,7 @@ interface OutputItem {
   data(): Uint8Array;
 }
 
-interface RendererContext<_T> {
+interface RendererContext {
   postMessage?: (msg: unknown) => void;
   onDidReceiveMessage?: (handler: (msg: unknown) => void) => void;
   readonly workspace: { readonly isTrusted: boolean };
@@ -31,7 +31,7 @@ interface Renderer {
   disposeOutputItem?(id?: string): void;
 }
 
-type ActivationFunction = (context: RendererContext<unknown>) => Renderer;
+type ActivationFunction = (context: RendererContext) => Renderer;
 
 interface DataFramePayload {
   readonly variable: string;
@@ -40,7 +40,7 @@ interface DataFramePayload {
   readonly totalRows: number;
 }
 
-export const activate: ActivationFunction = (context: RendererContext<unknown>) => ({
+export const activate: ActivationFunction = (context: RendererContext) => ({
   renderOutputItem(output: OutputItem, element: HTMLElement): void {
     try {
       const payload = output.json() as DataFramePayload;
@@ -57,7 +57,7 @@ export const activate: ActivationFunction = (context: RendererContext<unknown>) 
 function renderPayload(
   root: HTMLElement,
   payload: DataFramePayload,
-  context: RendererContext<unknown>
+  context: RendererContext
 ): void {
   root.innerHTML = '';
   root.classList.add('kensa-notebook-preview');

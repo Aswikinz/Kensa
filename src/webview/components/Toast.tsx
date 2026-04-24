@@ -23,7 +23,7 @@ const EXIT_MS = 200;
 
 let nextId = 1;
 let activeToasts: Toast[] = [];
-let exitingIds: Set<number> = new Set();
+const exitingIds: Set<number> = new Set();
 const listeners: Listener[] = [];
 
 function publish(): void {
