@@ -94,13 +94,33 @@ export interface KensaState {
   toggleOperationsPanel: () => void;
   toggleCodePreview: () => void;
 
+  // Column-search state driving the jump-to-column affordance in the
+  // toolbar. `scrollToColumnToken` is a monotonically-incrementing
+  // counter so DataGrid's effect fires even when the user searches for
+  // the same name twice in a row (otherwise `columnSearchQuery` doesn't
+  // actually change between calls and the effect doesn't re-trigger).
+  columnSearchQuery: string;
+  scrollToColumnToken: number;
+  scrollToColumnName: string | null;
+
   // Filter + sort actions. All of these are self-dispatching — they update
   // local state AND post the resulting applyFilter / applySort message to
   // the extension, so callers only need to invoke one function.
   addOrReplaceColumnFilter: (filter: FilterSpec) => void;
+  // Append a filter without evicting other filters on the same column.
+  // Used for advanced-filter forms where the user can stack multiple
+  // conditions (e.g. "age > 30 AND age < 60").
+  addFilter: (filter: FilterSpec) => void;
+  // Remove a specific filter instance by identity. Needed because a
+  // single column can now carry multiple filters, so "remove by column"
+  // is ambiguous.
+  removeFilterAt: (index: number) => void;
   removeColumnFilter: (columnIndex: number) => void;
   clearAllFilters: () => void;
   applySort: (sort: SortSpec | null) => void;
+
+  setColumnSearchQuery: (q: string) => void;
+  requestScrollToColumn: (name: string) => void;
 }
 
 export const useKensaStore = create<KensaState>((set) => ({
@@ -121,6 +141,9 @@ export const useKensaStore = create<KensaState>((set) => ({
   error: null,
   activeFilters: [],
   activeSort: null,
+  columnSearchQuery: '',
+  scrollToColumnToken: 0,
+  scrollToColumnName: null,
 
   selectedColumn: null,
   selectedOperationId: null,
@@ -192,19 +215,50 @@ export const useKensaStore = create<KensaState>((set) => ({
   toggleOperationsPanel: () => set((s) => ({ showOperationsPanel: !s.showOperationsPanel })),
   toggleCodePreview: () => set((s) => ({ showCodePreview: !s.showCodePreview })),
 
+  // Quick-filter ops (from the column menu) are mutually exclusive on
+  // the same column — selecting "Only missing" after "Only unique"
+  // replaces the earlier choice. Advanced-filter ops stack freely
+  // alongside the quick filter. The distinction lets a user combine
+  // "hide missing" (quick) with "contains 'foo'" (advanced) on one
+  // column, which the old single-filter-per-column semantics blocked.
   addOrReplaceColumnFilter: (filter) =>
     set((s) => {
-      // Only one filter per column per op — we dedupe by (column, op) so
-      // clicking "Filter: duplicated values" twice is idempotent, and
-      // switching from "Filter: not missing" to "Filter: duplicated values"
-      // on the same column replaces rather than accumulates.
-      const next = s.activeFilters
-        .filter((f) => !(f.columnIndex === filter.columnIndex && f.op === filter.op))
-        // For the same column, also drop any *other* op — users expect at
-        // most one quick filter per column until the generic Filter op is
-        // used.
-        .filter((f) => f.columnIndex !== filter.columnIndex);
+      const QUICK_OPS: FilterSpec['op'][] = [
+        'is_missing',
+        'is_not_missing',
+        'is_duplicated',
+        'is_unique'
+      ];
+      const next = s.activeFilters.filter(
+        (f) =>
+          !(f.columnIndex === filter.columnIndex && QUICK_OPS.includes(f.op))
+      );
       next.push(filter);
+      postMessage({ type: 'applyFilter', filters: next });
+      return { activeFilters: next };
+    }),
+
+  addFilter: (filter) =>
+    set((s) => {
+      // Skip pure duplicates — exact (column, op, value, case_insensitive)
+      // match means the filter is already active. Everything else stacks.
+      const isDupe = s.activeFilters.some(
+        (f) =>
+          f.columnIndex === filter.columnIndex &&
+          f.op === filter.op &&
+          (f.value ?? null) === (filter.value ?? null) &&
+          (f.caseInsensitive ?? false) === (filter.caseInsensitive ?? false)
+      );
+      if (isDupe) return {};
+      const next = [...s.activeFilters, filter];
+      postMessage({ type: 'applyFilter', filters: next });
+      return { activeFilters: next };
+    }),
+
+  removeFilterAt: (index) =>
+    set((s) => {
+      if (index < 0 || index >= s.activeFilters.length) return {};
+      const next = s.activeFilters.filter((_, i) => i !== index);
       postMessage({ type: 'applyFilter', filters: next });
       return { activeFilters: next };
     }),
@@ -227,5 +281,12 @@ export const useKensaStore = create<KensaState>((set) => ({
     set(() => {
       postMessage({ type: 'applySort', sort });
       return { activeSort: sort };
-    })
+    }),
+
+  setColumnSearchQuery: (q) => set({ columnSearchQuery: q }),
+  requestScrollToColumn: (name) =>
+    set((s) => ({
+      scrollToColumnName: name,
+      scrollToColumnToken: s.scrollToColumnToken + 1
+    }))
 }));

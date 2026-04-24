@@ -141,3 +141,15 @@ export function RefreshIcon({ size, ...rest }: IconProps) {
     </svg>
   );
 }
+
+/** Magnifier — shared icon for any search/find affordance. Same stroke
+ *  weight and viewBox as the rest so sizes match side-by-side with
+ *  RefreshIcon / FilterIcon in the toolbar. */
+export function SearchIcon({ size, ...rest }: IconProps) {
+  return (
+    <svg {...baseProps(size, rest)}>
+      <circle cx="7" cy="7" r="4.5" />
+      <line x1="10.5" y1="10.5" x2="13.5" y2="13.5" />
+    </svg>
+  );
+}

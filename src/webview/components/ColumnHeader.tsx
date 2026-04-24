@@ -1,16 +1,26 @@
-// One column header in the data grid. Renders the column name, dtype, a
-// tiny insight visualization (histogram or frequency bar), a drag handle
-// for resizing, and a dropdown menu with sort + quick-filter controls.
+// One column header in the data grid.
 //
-// The dropdown is a proper popover with a click-outside scrim and a visible
-// arrow pointing at the trigger, so it doesn't get mistaken for grid data.
-// Menu sections: Sort → Quick filters → (if this column is filtered) Clear
-// column filter.
+// Renders the column name, dtype, quick-insight viz, a resize handle,
+// and a dropdown menu containing:
+//   - Active-filter chip row (one chip per filter currently applied
+//     to this column — removable).
+//   - Sort section (asc/desc toggles).
+//   - Quick-filters section (is_missing / is_not_missing / is_duplicated /
+//     is_unique — mutually exclusive within this section).
+//   - Advanced-filter section (operator + value + case-insensitive,
+//     stacks freely with the quick filter and with itself — the user
+//     can hit "Apply" multiple times to pile up `X > 30`, `X < 60`, etc.).
+//
+// The advanced-filter form picks its operator options based on the
+// column's inferred dtype so numeric columns don't offer "contains" and
+// text columns don't offer numeric comparisons.
 
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useKensaStore } from '../state/store';
 import { QuickInsightViz } from './QuickInsightViz';
-import type { ColumnInfo, FilterSpec } from '../../shared/types';
+import { ThemedSelect } from './ThemedSelect';
+import { alignForDtype } from '../formatters';
+import type { ColumnInfo, FilterOp, FilterSpec } from '../../shared/types';
 
 interface ColumnHeaderProps {
   readonly column: ColumnInfo;
@@ -18,28 +28,87 @@ interface ColumnHeaderProps {
   readonly selected: boolean;
   readonly onResize: (newWidth: number) => void;
   readonly onSelect: () => void;
+  readonly highlight: boolean;
 }
 
-export function ColumnHeader({ column, width, selected, onResize, onSelect }: ColumnHeaderProps) {
+const QUICK_OPS: FilterOp[] = ['is_missing', 'is_not_missing', 'is_duplicated', 'is_unique'];
+
+export function ColumnHeader({
+  column,
+  width,
+  selected,
+  onResize,
+  onSelect,
+  highlight
+}: ColumnHeaderProps) {
   const insight = useKensaStore((s) =>
     s.insights.find((i) => i.columnIndex === column.index) ?? null
   );
-  // The CURRENT quick-filter op on this column (if any). Used to render a
-  // ✓ next to the active item and to toggle it off on the second click.
-  const activeOp = useKensaStore(
-    (s) =>
-      s.activeFilters.find((f) => f.columnIndex === column.index)?.op ?? null
-  );
+  const allFilters = useKensaStore((s) => s.activeFilters);
   const activeSort = useKensaStore((s) =>
     s.activeSort?.columnIndex === column.index ? s.activeSort : null
   );
-  const hasFilter = activeOp !== null;
   const addOrReplaceColumnFilter = useKensaStore((s) => s.addOrReplaceColumnFilter);
+  const addFilter = useKensaStore((s) => s.addFilter);
   const removeColumnFilter = useKensaStore((s) => s.removeColumnFilter);
+  const removeFilterAt = useKensaStore((s) => s.removeFilterAt);
   const applySort = useKensaStore((s) => s.applySort);
+
+  // Filters active on *this* column specifically, with their global index
+  // preserved so `removeFilterAt` can target the exact instance to drop.
+  const columnFilters = useMemo(
+    () =>
+      allFilters
+        .map((f, idx) => ({ filter: f, idx }))
+        .filter(({ filter }) => filter.columnIndex === column.index),
+    [allFilters, column.index]
+  );
+  const quickFilter = columnFilters.find(({ filter }) =>
+    QUICK_OPS.includes(filter.op)
+  );
+  const activeQuickOp = quickFilter?.filter.op ?? null;
+  const hasFilter = columnFilters.length > 0;
 
   const [menuOpen, setMenuOpen] = useState(false);
   const resizingRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  // Ref on the whole column-header element. The outside-click listener
+  // uses it to figure out whether a click landed inside this column's
+  // own DOM subtree (trigger button OR the popover menu rendered
+  // absolutely-positioned underneath) — if it did, leave the menu
+  // alone; otherwise close. The invisible scrim approach this replaces
+  // was getting trapped in sibling stacking contexts on some layouts,
+  // so clicks on underlying cells fell through to them instead of
+  // closing the menu, forcing users to click the ▾ toggle again.
+  const headerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      const root = headerRef.current;
+      if (!root) return;
+      if (!(e.target instanceof Node)) return;
+      if (root.contains(e.target)) return;
+      // Also leave the menu alone if the click landed in one of the
+      // popovers that live OUTSIDE this header's DOM but logically
+      // belong to it (the themed operator dropdown + the select-menu
+      // `<ul>` that both render at document scope). Checking by
+      // className keeps this decoupled from those components.
+      const target = e.target as Element;
+      if (
+        typeof target.closest === 'function' &&
+        (target.closest('.kensa-themed-select-panel') ||
+          target.closest('.kensa-themed-select-scrim'))
+      ) {
+        return;
+      }
+      setMenuOpen(false);
+    };
+    // mousedown (not click) so the menu closes on the press, not the
+    // release — feels snappier and sidesteps a race where the press's
+    // onClick would re-open a just-closed menu.
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
 
   const onDragStart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -61,8 +130,6 @@ export function ColumnHeader({ column, width, selected, onResize, onSelect }: Co
 
   const toggleSort = (ascending: boolean) => {
     setMenuOpen(false);
-    // Toggle: if this column is already sorted the same way, clear it;
-    // otherwise apply the new direction.
     if (activeSort && activeSort.ascending === ascending) {
       applySort(null);
     } else {
@@ -70,22 +137,29 @@ export function ColumnHeader({ column, width, selected, onResize, onSelect }: Co
     }
   };
 
-  const toggleQuickFilter = (op: FilterSpec['op']) => {
+  const toggleQuickFilter = (op: FilterOp) => {
     setMenuOpen(false);
-    // Second click on the same op clears it; clicking a different op on
-    // the same column replaces the previous choice.
-    if (activeOp === op) {
-      removeColumnFilter(column.index);
+    if (activeQuickOp === op && quickFilter) {
+      removeFilterAt(quickFilter.idx);
     } else {
       addOrReplaceColumnFilter({ columnIndex: column.index, op });
     }
   };
 
+  const align = alignForDtype(column.dtype);
+
   return (
     <div
-      className={`kensa-col-header ${selected ? 'kensa-col-header-selected' : ''} ${
-        hasFilter ? 'kensa-col-header-filtered' : ''
-      }`}
+      ref={headerRef}
+      className={[
+        'kensa-col-header',
+        `kensa-col-header-align-${align}`,
+        selected ? 'kensa-col-header-selected' : '',
+        hasFilter ? 'kensa-col-header-filtered' : '',
+        highlight ? 'kensa-col-header-highlight' : ''
+      ]
+        .filter(Boolean)
+        .join(' ')}
       style={{ width, minWidth: width }}
       onClick={onSelect}
     >
@@ -114,17 +188,31 @@ export function ColumnHeader({ column, width, selected, onResize, onSelect }: Co
       {menuOpen && (
         <>
           <div
-            className="kensa-col-menu-scrim"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen(false);
-            }}
-          />
-          <div
             className="kensa-col-menu"
             role="menu"
             onClick={(e) => e.stopPropagation()}
           >
+            {columnFilters.length > 0 && (
+              <>
+                <div className="kensa-filter-chips">
+                  {columnFilters.map(({ filter, idx }) => (
+                    <span className="kensa-filter-chip" key={idx} title="Click × to remove">
+                      {describeFilter(filter)}
+                      <button
+                        type="button"
+                        className="kensa-filter-chip-remove"
+                        onClick={() => removeFilterAt(idx)}
+                        aria-label="Remove filter"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="kensa-col-menu-divider" />
+              </>
+            )}
+
             <div className="kensa-col-menu-section">Sort</div>
             <SortItem
               active={activeSort?.ascending === true}
@@ -138,28 +226,37 @@ export function ColumnHeader({ column, width, selected, onResize, onSelect }: Co
               arrow="↓"
               onClick={() => toggleSort(false)}
             />
+
             <div className="kensa-col-menu-divider" />
             <div className="kensa-col-menu-section">Quick filters</div>
             <ToggleItem
-              active={activeOp === 'is_not_missing'}
+              active={activeQuickOp === 'is_not_missing'}
               label="Hide missing"
               onClick={() => toggleQuickFilter('is_not_missing')}
             />
             <ToggleItem
-              active={activeOp === 'is_missing'}
+              active={activeQuickOp === 'is_missing'}
               label="Only missing"
               onClick={() => toggleQuickFilter('is_missing')}
             />
             <ToggleItem
-              active={activeOp === 'is_duplicated'}
+              active={activeQuickOp === 'is_duplicated'}
               label="Only duplicates"
               onClick={() => toggleQuickFilter('is_duplicated')}
             />
             <ToggleItem
-              active={activeOp === 'is_unique'}
+              active={activeQuickOp === 'is_unique'}
               label="Only unique values"
               onClick={() => toggleQuickFilter('is_unique')}
             />
+
+            <div className="kensa-col-menu-divider" />
+            <div className="kensa-col-menu-section">Advanced filter</div>
+            <AdvancedFilterForm
+              dtype={column.dtype}
+              onApply={(spec) => addFilter({ ...spec, columnIndex: column.index })}
+            />
+
             {hasFilter && (
               <>
                 <div className="kensa-col-menu-divider" />
@@ -171,7 +268,8 @@ export function ColumnHeader({ column, width, selected, onResize, onSelect }: Co
                     removeColumnFilter(column.index);
                   }}
                 >
-                  <span className="kensa-col-menu-icon">×</span>Clear filter on this column
+                  <span className="kensa-col-menu-icon">×</span>
+                  Clear all filters on this column
                 </button>
               </>
             )}
@@ -184,8 +282,161 @@ export function ColumnHeader({ column, width, selected, onResize, onSelect }: Co
   );
 }
 
-/** A menu row that renders a ✓ on the left when active, doubling the
- *  click as a toggle. Shared by quick-filter rows in the column dropdown. */
+/** Advanced-filter sub-form: operator dropdown + value input + case-
+ *  insensitive checkbox + Apply button. Operators are restricted by
+ *  dtype — numeric/datetime columns only expose comparison ops, text
+ *  columns expose contains/starts_with/ends_with/regex in addition
+ *  to equality. The Apply button stacks the new filter onto whatever
+ *  is already on the column (quick filter + any prior advanced ones). */
+function AdvancedFilterForm({
+  dtype,
+  onApply
+}: {
+  readonly dtype: string;
+  readonly onApply: (spec: Omit<FilterSpec, 'columnIndex'>) => void;
+}) {
+  const ops = useMemo(() => opsForDtype(dtype), [dtype]);
+  const [op, setOp] = useState<FilterOp>(ops[0] ?? 'eq');
+  const [value, setValue] = useState('');
+  const [ci, setCi] = useState(true);
+
+  const submit = () => {
+    if (value.trim() === '') return;
+    onApply({
+      op,
+      value,
+      caseInsensitive: isTextOp(op) ? ci : undefined
+    });
+    setValue('');
+  };
+
+  const showCaseToggle = isTextOp(op);
+
+  // Use our themed popover select instead of a native `<select>` — the
+  // native one pops up with OS / browser styling for the option list,
+  // which blatantly clashes with the dark column menu it lives inside.
+  const opOptions = useMemo(
+    () => ops.map((o) => ({ value: o, label: OP_LABELS[o] })),
+    [ops]
+  );
+
+  return (
+    <div className="kensa-adv-filter">
+      <div className="kensa-adv-filter-row">
+        <ThemedSelect
+          value={op}
+          options={opOptions}
+          onChange={(v) => setOp(v)}
+          ariaLabel="Filter operator"
+        />
+      </div>
+      <div className="kensa-adv-filter-row">
+        <input
+          className="kensa-input"
+          type="text"
+          placeholder={placeholderForOp(op)}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+          }}
+        />
+      </div>
+      {showCaseToggle && (
+        <label className="kensa-adv-filter-checkbox">
+          <input
+            type="checkbox"
+            checked={ci}
+            onChange={(e) => setCi(e.target.checked)}
+          />
+          Case insensitive
+        </label>
+      )}
+      <div className="kensa-adv-filter-actions">
+        <button
+          type="button"
+          className="kensa-adv-filter-btn kensa-adv-filter-btn-primary"
+          onClick={submit}
+          disabled={value.trim() === ''}
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const OP_LABELS: Record<FilterOp, string> = {
+  eq: 'Equals',
+  ne: 'Not equals',
+  gt: 'Greater than',
+  gte: 'Greater than or equal',
+  lt: 'Less than',
+  lte: 'Less than or equal',
+  contains: 'Contains',
+  starts_with: 'Starts with',
+  ends_with: 'Ends with',
+  regex: 'Matches regex',
+  is_missing: 'Is missing',
+  is_not_missing: 'Is not missing',
+  is_duplicated: 'Is duplicated',
+  is_unique: 'Is unique'
+};
+
+const NUMERIC_DTYPES = ['int64', 'int32', 'int16', 'int8', 'float64', 'float32', 'float', 'int'];
+const DATETIME_DTYPES = ['datetime64[ns]', 'datetime', 'date'];
+
+function opsForDtype(dtype: string): FilterOp[] {
+  const d = dtype.toLowerCase();
+  const isNumeric = NUMERIC_DTYPES.some((t) => d.includes(t));
+  const isDatetime = DATETIME_DTYPES.some((t) => d.includes(t));
+  const isBoolean = d.includes('bool');
+  if (isBoolean) return ['eq', 'ne'];
+  if (isNumeric || isDatetime) return ['eq', 'ne', 'gt', 'gte', 'lt', 'lte'];
+  // Text / categorical default.
+  return ['contains', 'starts_with', 'ends_with', 'eq', 'ne', 'regex'];
+}
+
+function isTextOp(op: FilterOp): boolean {
+  return op === 'contains' || op === 'starts_with' || op === 'ends_with' || op === 'eq' || op === 'ne' || op === 'regex';
+}
+
+function placeholderForOp(op: FilterOp): string {
+  if (op === 'regex') return '^foo.*bar$';
+  if (op === 'contains') return 'substring';
+  if (op === 'starts_with') return 'prefix';
+  if (op === 'ends_with') return 'suffix';
+  if (op === 'gt' || op === 'gte' || op === 'lt' || op === 'lte') return 'number';
+  return 'value';
+}
+
+/** Humanized rendering of a filter spec for chip display. */
+function describeFilter(f: FilterSpec): string {
+  if (QUICK_OPS.includes(f.op)) {
+    switch (f.op) {
+      case 'is_missing': return 'only missing';
+      case 'is_not_missing': return 'hide missing';
+      case 'is_duplicated': return 'only duplicates';
+      case 'is_unique': return 'only unique';
+    }
+  }
+  const valueStr = f.value ?? '';
+  const truncated = valueStr.length > 14 ? valueStr.slice(0, 13) + '…' : valueStr;
+  switch (f.op) {
+    case 'eq': return `= ${truncated}`;
+    case 'ne': return `≠ ${truncated}`;
+    case 'gt': return `> ${truncated}`;
+    case 'gte': return `≥ ${truncated}`;
+    case 'lt': return `< ${truncated}`;
+    case 'lte': return `≤ ${truncated}`;
+    case 'contains': return `contains “${truncated}”`;
+    case 'starts_with': return `starts “${truncated}”`;
+    case 'ends_with': return `ends “${truncated}”`;
+    case 'regex': return `/${truncated}/`;
+    default: return String(f.op);
+  }
+}
+
 function ToggleItem({
   active,
   label,
@@ -209,8 +460,6 @@ function ToggleItem({
   );
 }
 
-/** Sort menu row — same toggle behavior as ToggleItem but uses an arrow
- *  glyph (↑/↓) that dims when inactive so you can still tell the direction. */
 function SortItem({
   active,
   label,

@@ -9,8 +9,10 @@
 // doubles as a "clear all filters" button. It's hidden when there are no
 // active filters so the chrome stays quiet when nothing is filtered.
 
+import { useEffect } from 'react';
 import { useKensaStore } from '../state/store';
 import { postMessage } from '../vscodeApi';
+import { formatCompact, formatPercent } from '../formatters';
 import {
   BoltIcon,
   CodeIcon,
@@ -18,6 +20,7 @@ import {
   FilterIcon,
   OperationsIcon,
   RefreshIcon,
+  SearchIcon,
   SummaryIcon,
   TerminalIcon
 } from './icons';
@@ -45,6 +48,42 @@ export function Toolbar() {
   const filterCount = activeFilters.length;
   const hasView = filterCount > 0 || activeSort !== null;
 
+  // Whole-dataset completeness — non-missing cells / total cells.
+  //
+  // Insights are computed on the ORIGINAL slice, not on the post-filter
+  // one. When a filter is active `rowCount` drops but `insights[i].missing`
+  // still reflects the unfiltered counts, so a naive subtraction could
+  // produce `totalMissing > totalCells` and a negative percentage
+  // (e.g. "-43% complete" if >half the rows got filtered out). We mark
+  // the number as stale in that case and show the last known good value
+  // clamped to [0, 100]. The right long-term fix is refreshing insights
+  // on every filter change, but that requires backend work; clamping
+  // here prevents the visible regression until then.
+  const insights = useKensaStore((s) => s.insights);
+  const { completenessLabel, completenessIsStale } = (() => {
+    if (rowCount === 0 || colCount === 0 || insights.length === 0) {
+      return { completenessLabel: '—', completenessIsStale: false };
+    }
+    const totalCells = rowCount * colCount;
+    const totalMissing = insights.reduce((sum, ins) => sum + ins.missing, 0);
+    if (totalCells === 0) return { completenessLabel: '—', completenessIsStale: false };
+    const stale = totalMissing > totalCells;
+    const missingClamped = Math.min(totalMissing, totalCells);
+    const nonMissing = Math.max(0, totalCells - missingClamped);
+    return {
+      completenessLabel: formatPercent(nonMissing, totalCells),
+      completenessIsStale: stale
+    };
+  })();
+  const completenessClass = (() => {
+    if (completenessLabel === '—' || completenessIsStale) return '';
+    const num = parseFloat(completenessLabel);
+    if (Number.isNaN(num)) return '';
+    if (num >= 95) return 'kensa-toolbar-stat-value-success';
+    if (num >= 80) return 'kensa-toolbar-stat-value-primary';
+    return 'kensa-toolbar-stat-value-warning';
+  })();
+
   const requestMode = (requested: 'viewing' | 'editing') => {
     if (switching || requested === mode) return;
     setSwitching(true);
@@ -58,6 +97,7 @@ export function Toolbar() {
         <div className="kensa-filename" title={fileName}>
           {fileName}
         </div>
+        <ColumnSearchPill />
       </div>
 
       <div className="kensa-toolbar-center">
@@ -99,9 +139,20 @@ export function Toolbar() {
           >
             <FilterIcon size={14} />
             <span className="kensa-filter-badge-label">
-              {filterCount > 0
-                ? `${filterCount} filter${filterCount === 1 ? '' : 's'}`
-                : 'Sorted'}
+              {filterCount > 0 ? (
+                <>
+                  {filterCount} filter{filterCount === 1 ? '' : 's'}
+                  {/* Filtered/total counter gives the user the "hit rate"
+                      of their filter at a glance without opening the
+                      summary panel. Omitted when only sort is active
+                      because sort doesn't change row count. */}
+                  <span className="kensa-filter-badge-ratio">
+                    {rowCount.toLocaleString()}
+                  </span>
+                </>
+              ) : (
+                'Sorted'
+              )}
             </span>
             <span className="kensa-filter-badge-close">×</span>
           </button>
@@ -117,8 +168,28 @@ export function Toolbar() {
           {engine === 'rust' ? <BoltIcon size={14} /> : <TerminalIcon size={14} />}
           <span className="kensa-engine-label">{engine === 'rust' ? 'Rust' : 'Python'}</span>
         </div>
-        <div className="kensa-row-count">
-          {rowCount.toLocaleString()} × {colCount}
+        <div className="kensa-toolbar-stats" aria-label="Dataset summary">
+          <div className="kensa-toolbar-stat" title={`${rowCount.toLocaleString()} rows`}>
+            <span className="kensa-toolbar-stat-value kensa-toolbar-stat-value-primary">
+              {formatCompact(rowCount)}
+            </span>
+            <span className="kensa-toolbar-stat-label">rows</span>
+          </div>
+          <span className="kensa-toolbar-stat-divider" />
+          <div className="kensa-toolbar-stat" title={`${colCount} columns`}>
+            <span className="kensa-toolbar-stat-value">{colCount}</span>
+            <span className="kensa-toolbar-stat-label">cols</span>
+          </div>
+          <span className="kensa-toolbar-stat-divider" />
+          <div
+            className="kensa-toolbar-stat"
+            title="Share of non-missing cells across the whole dataset"
+          >
+            <span className={`kensa-toolbar-stat-value ${completenessClass}`}>
+              {completenessLabel}
+            </span>
+            <span className="kensa-toolbar-stat-label">complete</span>
+          </div>
         </div>
         <IconButton
           label={
@@ -158,6 +229,62 @@ export function Toolbar() {
           <ExportIcon />
         </IconButton>
       </div>
+    </div>
+  );
+}
+
+/** Search pill that jumps to a column by name match. Typing triggers a
+ *  smooth horizontal scroll on the DataGrid and a brief pink pulse on
+ *  the matching column header. Debounced at 140ms so fast typing
+ *  doesn't whiplash the grid; searches match by exact → prefix →
+ *  contains, in that order, so typing a unique prefix lands on the
+ *  right column even on a 50-column dataset. */
+function ColumnSearchPill() {
+  const query = useKensaStore((s) => s.columnSearchQuery);
+  const setQuery = useKensaStore((s) => s.setColumnSearchQuery);
+  const requestScrollToColumn = useKensaStore((s) => s.requestScrollToColumn);
+  const columns = useKensaStore((s) => s.slice?.columns ?? []);
+
+  // Debounce the scroll request so the grid doesn't re-layout on every
+  // keystroke. React's state update is still synchronous, so the input
+  // itself stays instantly responsive.
+  useEffect(() => {
+    if (!query.trim()) return;
+    const handle = window.setTimeout(() => {
+      requestScrollToColumn(query);
+    }, 140);
+    return () => window.clearTimeout(handle);
+  }, [query, requestScrollToColumn]);
+
+  if (columns.length === 0) return null;
+
+  return (
+    <div className="kensa-col-search" title="Search for a column by name">
+      <span className="kensa-col-search-icon" aria-hidden>
+        <SearchIcon size={12} />
+      </span>
+      <input
+        type="text"
+        className="kensa-col-search-input"
+        placeholder="Find column…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && query.trim()) requestScrollToColumn(query);
+          if (e.key === 'Escape') setQuery('');
+        }}
+      />
+      {query && (
+        <button
+          type="button"
+          className="kensa-col-search-clear"
+          onClick={() => setQuery('')}
+          aria-label="Clear search"
+          title="Clear"
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }

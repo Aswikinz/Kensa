@@ -1,23 +1,41 @@
-// Compact visualization shown inside each column header. Two layouts:
+// Compact visualization inside each column header. Two layouts:
 //   - numeric/datetime → tiny histogram bars
 //   - categorical/boolean → top-N horizontal frequency bars
-// Both render as plain DOM elements — no external chart lib — so they stay
-// cheap for 100+ column datasets.
 //
-// Layout: a vertical stack containing the visualization (fills remaining
-// space) and a single-line stats row underneath. The parent .kensa-col-insight
-// reserves a fixed minimum height so the grid rows below never collide.
+// Stats row now reads as `14% missing · 78% unique` instead of raw counts.
+// Percentages answer the question "is this column healthy?" at a glance
+// in a way that raw integers can't (a 234 missing out of 10M rows is
+// fine; 234 out of 300 is broken). The missing figure flips to the pink
+// accent when it crosses 10% so attention-worthy columns visually stand
+// apart without a legend.
 
 import type { QuickInsight } from '../../shared/types';
+import { formatPercent } from '../formatters';
+import { useKensaStore } from '../state/store';
 
 interface Props {
   readonly insight: QuickInsight;
 }
 
 export function QuickInsightViz({ insight }: Props) {
+  // Use total rows from the slice so our denominator is the full column
+  // length, not just the number of non-missing values.
+  const totalRows = useKensaStore((s) => s.slice?.totalRows ?? 0);
+
+  const missingPct = totalRows > 0 ? (insight.missing / totalRows) * 100 : 0;
+  const missingLabel = totalRows > 0 ? formatPercent(insight.missing, totalRows) : '—';
+  const uniqueLabel = totalRows > 0 ? formatPercent(insight.distinct, totalRows) : '—';
+  const missingClass = missingPct >= 10 ? 'kensa-insight-stat-missing-warn' : 'kensa-insight-stat-missing-ok';
+
   const stats = (
     <div className="kensa-insight-stats">
-      missing {insight.missing} · distinct {insight.distinct}
+      <span className={missingClass} title={`${insight.missing} missing values`}>
+        {missingLabel} missing
+      </span>
+      <span className="kensa-insight-stat-sep">·</span>
+      <span className="kensa-insight-stat-unique" title={`${insight.distinct} distinct values`}>
+        {uniqueLabel} unique
+      </span>
     </div>
   );
 
