@@ -4,6 +4,24 @@ All notable changes to Kensa are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Kensa follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] — 2026-04-24
+
+### Security
+
+- **Closed Dependabot alert #2: `uuid` < 14.0.0 missing-buffer-bounds-check
+  in v3/v5/v6 generators.** `uuid@8.3.2` was pulled transitively by
+  `@vscode/vsce@^2.22.0` → `@azure/identity@4.13.1` →
+  `@azure/msal-node@5.1.2` → `uuid@^8.3.0`. Bumped `@vscode/vsce` to
+  `^3.9.1` and added an npm `overrides` entry forcing `uuid: "^14.0.0"`
+  across the whole tree, which resolves the transitive to `uuid@14.0.0`
+  without waiting on upstream to move. Verified end-to-end by re-
+  packaging a VSIX (the vsce path is the one that actually exercises
+  msal-node; msal-node@5.1.2 works fine against uuid@14 because it only
+  calls `v4()` without passing a `buf` argument). Practical impact was
+  zero — `uuid` is a build-time devDependency only and Kensa never
+  ships it to end users — but we don't want the repo carrying open
+  security alerts.
+
 ## [0.1.7] — 2026-04-23
 
 Design refresh release. Every UI surface now uses a cohesive palette
@@ -124,22 +142,6 @@ surfaces, larger radii, and a reworked stats vocabulary that answers
 - **Native `<select>`** option popups for enum parameters in the
   operations panel no longer show with the OS default light styling —
   appearance is stripped and the trigger gets a themed chevron.
-
-### Security
-
-- **Closed Dependabot alert #2: `uuid` < 14.0.0 missing-buffer-bounds-check
-  in v3/v5/v6 generators.** `uuid@8.3.2` was pulled transitively by
-  `@vscode/vsce@^2.22.0` → `@azure/identity@4.13.1` →
-  `@azure/msal-node@5.1.2` → `uuid@^8.3.0`. Bumped `@vscode/vsce` to
-  `^3.9.1` and added an npm `overrides` entry forcing `uuid: "^14.0.0"`
-  across the whole tree, which resolves the transitive to `uuid@14.0.0`
-  without waiting on upstream to move. Verified end-to-end by re-
-  packaging a VSIX (the vsce path is the one that actually exercises
-  msal-node, and msal-node@5.1.2 works fine against uuid@14 because it
-  only calls `v4()` without passing a `buf` argument). Practical impact
-  was zero — uuid is a build-time devDependency only and Kensa never
-  ships it to end users — but we don't want the repo carrying open
-  security alerts.
 
 ### Tests + CI
 
@@ -512,6 +514,7 @@ First public release (never reached the marketplace — see 0.1.1).
 
 ---
 
+[0.1.8]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.8
 [0.1.7]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.7
 [0.1.6]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.6
 [0.1.5]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.5
