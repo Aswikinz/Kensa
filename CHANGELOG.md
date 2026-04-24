@@ -125,6 +125,22 @@ surfaces, larger radii, and a reworked stats vocabulary that answers
   operations panel no longer show with the OS default light styling —
   appearance is stripped and the trigger gets a themed chevron.
 
+### Security
+
+- **Closed Dependabot alert #2: `uuid` < 14.0.0 missing-buffer-bounds-check
+  in v3/v5/v6 generators.** `uuid@8.3.2` was pulled transitively by
+  `@vscode/vsce@^2.22.0` → `@azure/identity@4.13.1` →
+  `@azure/msal-node@5.1.2` → `uuid@^8.3.0`. Bumped `@vscode/vsce` to
+  `^3.9.1` and added an npm `overrides` entry forcing `uuid: "^14.0.0"`
+  across the whole tree, which resolves the transitive to `uuid@14.0.0`
+  without waiting on upstream to move. Verified end-to-end by re-
+  packaging a VSIX (the vsce path is the one that actually exercises
+  msal-node, and msal-node@5.1.2 works fine against uuid@14 because it
+  only calls `v4()` without passing a `buf` argument). Practical impact
+  was zero — uuid is a build-time devDependency only and Kensa never
+  ships it to end users — but we don't want the repo carrying open
+  security alerts.
+
 ### Tests + CI
 
 - `c8` + `cargo-llvm-cov` coverage pipeline still runs on every push
