@@ -156,13 +156,22 @@ export const useKensaStore = create<KensaState>((set) => ({
   showCodePreview: false,
 
   setSlice: (slice) =>
+    // Replace the slice AND drop the cached column stats / insights —
+    // the previous values were computed against the *old* slice, so
+    // keeping them around makes the summary panel show stale numbers
+    // after a refresh / re-load. The empty caches force a re-fetch of
+    // the currently-selected column's detailed stats and let the next
+    // `allColumnInsights` message replace the per-column visualizations
+    // in the headers without leaving them stuck on pre-refresh data.
     set({
       slice,
       loading: false,
       error: null,
       previewSlice: null,
       previewDiff: null,
-      previewChangedMask: []
+      previewChangedMask: [],
+      statsByColumn: {},
+      insights: []
     }),
   setPreview: (slice, diff, changedMask, code) =>
     set({

@@ -481,6 +481,13 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
           }}
           onCopyRow={() => copyRowAt(contextTarget.rowIdx)}
           onCopyColumn={() => copyColumnAt(contextTarget.colIdx)}
+          onCopyColumnName={() => {
+            const name = slice.columns[contextTarget.colIdx]?.name ?? '';
+            writeClipboard(name, {
+              label: 'Column name copied',
+              value: truncateForToast(name)
+            });
+          }}
           onFilter={(op: FilterOp) => {
             if (contextTarget.value == null) return;
             addFilter({

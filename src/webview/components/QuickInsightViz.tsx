@@ -22,9 +22,16 @@ export function QuickInsightViz({ insight }: Props) {
   // length, not just the number of non-missing values.
   const totalRows = useKensaStore((s) => s.slice?.totalRows ?? 0);
 
-  const missingPct = totalRows > 0 ? (insight.missing / totalRows) * 100 : 0;
-  const missingLabel = totalRows > 0 ? formatPercent(insight.missing, totalRows) : '—';
-  const uniqueLabel = totalRows > 0 ? formatPercent(insight.distinct, totalRows) : '—';
+  // Insights are computed on the unfiltered data, so after a heavy
+  // filter `insight.missing` can exceed the (now smaller) `totalRows`
+  // and the raw division would render "147% missing". Clamp both
+  // counts to `[0, totalRows]` so the display stays sane until the
+  // backend gets re-asked for fresh insights post-filter.
+  const clampedMissing = Math.min(Math.max(0, insight.missing), totalRows);
+  const clampedDistinct = Math.min(Math.max(0, insight.distinct), totalRows);
+  const missingPct = totalRows > 0 ? (clampedMissing / totalRows) * 100 : 0;
+  const missingLabel = totalRows > 0 ? formatPercent(clampedMissing, totalRows) : '—';
+  const uniqueLabel = totalRows > 0 ? formatPercent(clampedDistinct, totalRows) : '—';
   const missingClass = missingPct >= 10 ? 'kensa-insight-stat-missing-warn' : 'kensa-insight-stat-missing-ok';
 
   const stats = (
@@ -38,6 +45,25 @@ export function QuickInsightViz({ insight }: Props) {
       </span>
     </div>
   );
+
+  // 100%-missing column → don't try to render an empty histogram /
+  // frequency chart, just a single all-missing banner. The backend
+  // sometimes still emits a trivial histogram for these, which would
+  // render as one tall bar at the leftmost bin and was being
+  // mistaken for "lots of values clustered at the start".
+  const allMissing = totalRows > 0 && clampedMissing >= totalRows;
+  if (allMissing) {
+    return (
+      <>
+        <div className="kensa-col-insight-viz">
+          <div className="kensa-insight-allmissing" title="Every value in this column is missing">
+            all missing
+          </div>
+        </div>
+        {stats}
+      </>
+    );
+  }
 
   if (insight.histogram && insight.histogram.length > 0) {
     const maxCount = Math.max(...insight.histogram.map((b) => b.count));
