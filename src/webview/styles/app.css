@@ -594,10 +594,20 @@
   text-transform: lowercase;
 }
 
-.kensa-missing-label-nan  { color: rgba(235, 7, 140, 0.75); }
-.kensa-missing-label-nat  { color: rgba(235, 7, 140, 0.75); }
-.kensa-missing-label-null { color: rgba(245, 184, 46, 0.75); }
-.kensa-missing-label-none { color: var(--kensa-text-subtle); }
+/* Every missing-value sentinel uses the pink accent, with subtle
+ * intensity variation so the four kinds still look distinguishable
+ * at a glance:
+ *   - nan / nat → strongest (numeric & datetime are the most common
+ *     "data should be here" cases, so they get the most attention)
+ *   - null      → mid (boolean missing — less load-bearing usually)
+ *   - none      → softest (object / categorical — often expected)
+ * The dotted-underline + italic + monospace treatment from the base
+ * `.kensa-missing-label` rule keeps every label visually separated
+ * from real data; the pink tint just unifies the palette. */
+.kensa-missing-label-nan  { color: rgba(235, 7, 140, 0.85); }
+.kensa-missing-label-nat  { color: rgba(235, 7, 140, 0.85); }
+.kensa-missing-label-null { color: rgba(235, 7, 140, 0.7); }
+.kensa-missing-label-none { color: rgba(235, 7, 140, 0.55); }
 
 .kensa-cell-selected {
   background: var(--kensa-primary-soft);
@@ -636,6 +646,14 @@
   gap: 3px;
   user-select: none;
   transition: background var(--kensa-motion);
+  /* Clip anything that would otherwise paint past the column's right
+     edge when the user resizes the column narrower than the content
+     (long names, long dtypes like `datetime64[ns, UTC]`, the all-missing
+     pink banner, etc.). Without this, those elements spill into the
+     neighbouring header. The resize handle stays clickable because it
+     sits at `right: -3px` — outside this overflow box but on the
+     header's relative-positioned z-stack. */
+  overflow: hidden;
 }
 
 .kensa-col-header:hover {
@@ -652,6 +670,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 4px;
+  /* `min-width: 0` lets this flex row shrink past its intrinsic content
+     width — without it, the inner `.kensa-col-name` can't actually use
+     its `text-overflow: ellipsis` because flex items default to a
+     min-width equal to their content. */
+  min-width: 0;
 }
 
 .kensa-col-name {
@@ -661,6 +684,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--kensa-text);
+  /* Same flex-shrink fix as the parent — needed for the ellipsis to
+     kick in. The menu button keeps its intrinsic size; the name flexes. */
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .kensa-col-menu-btn {
@@ -685,6 +712,12 @@
   text-transform: lowercase;
   font-weight: 600;
   letter-spacing: 0.02em;
+  /* Clip + ellipsis so dtypes like `datetime64[ns, UTC]` truncate
+     gracefully on a narrow column instead of pushing the column
+     visibly wider than its intended width. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kensa-col-insight {
@@ -952,6 +985,25 @@
 
 .kensa-insight-stats > span {
   white-space: nowrap;
+}
+
+/* Replaces the histogram / frequency viz when a column is 100% missing.
+ * A single italic pink label fits the existing column-header height and
+ * makes the all-missing condition obvious without mistakenly rendering
+ * an empty/garbage histogram. */
+.kensa-insight-allmissing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-style: italic;
+  font-size: 10.5px;
+  color: rgba(235, 7, 140, 0.85);
+  background: rgba(235, 7, 140, 0.08);
+  border: 1px dashed rgba(235, 7, 140, 0.3);
+  border-radius: var(--kensa-radius-sm);
+  letter-spacing: 0.04em;
 }
 
 .kensa-insight-stat-unique { color: var(--kensa-primary-strong); font-weight: 600; }

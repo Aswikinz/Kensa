@@ -291,7 +291,13 @@ def _cell_to_json(value: Any) -> Optional[str]:
 def get_column_stats(column_index: int) -> Dict[str, Any]:
     df = current_view()
     col_name = df.columns[column_index]
-    series = df[col_name]
+    # Positional access — `df[col_name]` returns a *DataFrame* when
+    # `col_name` collides with another column (pandas duplicates the
+    # selection rather than picking one), which silently broke every
+    # downstream `series.count() / .isna() / .describe()` call. Using
+    # `iloc[:, column_index]` always yields a Series for the exact
+    # column the user clicked, regardless of name collisions.
+    series = df.iloc[:, column_index]
     stats: Dict[str, Any] = {
         "name": str(col_name),
         "dtype": str(series.dtype),
@@ -348,7 +354,11 @@ def get_all_insights() -> List[Dict[str, Any]]:
     df = current_view()
     insights: List[Dict[str, Any]] = []
     for i, col_name in enumerate(df.columns):
-        series = df[col_name]
+        # Positional access — same fix as in get_column_stats: name-based
+        # `df[col_name]` selects multiple columns when the dataset has
+        # duplicate names, breaking `.isna()` / `.nunique()` / dtype
+        # detection for every column with a clashing name.
+        series = df.iloc[:, i]
         missing = int(series.isna().sum())
         distinct = int(series.nunique(dropna=True))
         dtype_str = str(series.dtype)

@@ -4,6 +4,63 @@ All notable changes to Kensa are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Kensa follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] — 2026-04-25
+
+Correctness + polish round driven by user feedback. No new top-level
+features — every change is a fix or refinement to an existing surface.
+
+### Fixed
+
+- **Missing percentage could exceed 100% (or go negative) when a filter
+  was active.** The column-header insight stats and the side-panel
+  column-detail view used the post-filter `slice.totalRows` as the
+  denominator but the pre-filter `insight.missing` count as the
+  numerator, so any filter that dropped non-missing rows pushed the
+  ratio above 100%. Both surfaces now clamp the counts to
+  `[0, totalRows]` before formatting (matching the toolbar's existing
+  clamp from 0.1.7), so percentages stay in `[0%, 100%]` regardless of
+  filter state. Backend insight refresh on filter change is still the
+  proper long-term fix and is queued for the streaming-load work.
+- **Summary stats stayed stale after hitting Refresh.** The data slice
+  was being replaced but the cached `statsByColumn` and `insights` in
+  the webview store were not, so the side panel kept showing the
+  pre-refresh detail until the user clicked a different column. The
+  store now drops both caches whenever `setSlice` runs, which forces a
+  fresh `requestColumnStats` for the currently-selected column and
+  lets the next `allColumnInsights` message replace the per-column
+  visualizations cleanly.
+- **Duplicate column names broke summary stats.** The Python backend
+  resolved columns by name (`df[col_name]`), which silently returns a
+  *DataFrame* (not a Series) when the name is duplicated, so every
+  `.count() / .isna() / .describe()` call downstream crashed or
+  produced garbage. Switched to positional access (`df.iloc[:, i]`)
+  in `get_column_stats` and `get_all_insights`, so stats are now
+  correct regardless of name collisions. Rust engine path was already
+  safe — it uses index-based access throughout.
+- **100%-missing columns rendered an empty/garbage chart instead of
+  saying so.** Both the column header viz (`QuickInsightViz`) and the
+  side-panel column detail now special-case `missing === total` and
+  render an explicit "all missing" / "100% missing" treatment. The
+  side panel additionally hides the percentile/range cards (nothing
+  to summarize) and offers a hint to drop or fill the column.
+
+### Changed
+
+- **Every missing-value sentinel now uses the pink accent**, with
+  subtle intensity variation so `nan` / `nat` / `null` / `none` stay
+  distinguishable but don't break the two-colour palette. Previously
+  `null` (boolean) used amber and `none` (object) used a low-contrast
+  grey; both were inconsistent with the rest of the missing-value
+  treatment.
+
+### Added
+
+- **Copy column name** — two new affordances:
+  - Double-click the column name in any header → copies the name + toast
+  - New `Copy column name` row at the top of the column ▾ menu
+  - New `Copy column name` row in the right-click cell context menu
+    (sits next to `Copy cell`, `Copy row`, `Copy column`)
+
 ## [0.1.8] — 2026-04-24
 
 ### Security
@@ -514,6 +571,7 @@ First public release (never reached the marketplace — see 0.1.1).
 
 ---
 
+[0.1.9]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.9
 [0.1.8]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.8
 [0.1.7]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.7
 [0.1.6]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.6

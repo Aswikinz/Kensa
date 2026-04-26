@@ -19,7 +19,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useKensaStore } from '../state/store';
 import { QuickInsightViz } from './QuickInsightViz';
 import { ThemedSelect } from './ThemedSelect';
-import { alignForDtype } from '../formatters';
+import { showToast } from './Toast';
+import { alignForDtype, truncateForToast } from '../formatters';
 import type { ColumnInfo, FilterOp, FilterSpec } from '../../shared/types';
 
 interface ColumnHeaderProps {
@@ -146,6 +147,19 @@ export function ColumnHeader({
     }
   };
 
+  const copyColumnName = () => {
+    setMenuOpen(false);
+    navigator.clipboard
+      .writeText(column.name)
+      .then(() =>
+        showToast('Column name copied', {
+          value: truncateForToast(column.name),
+          icon: '✓'
+        })
+      )
+      .catch(() => showToast('Copy blocked by browser', { icon: '!' }));
+  };
+
   const align = alignForDtype(column.dtype);
 
   return (
@@ -164,7 +178,17 @@ export function ColumnHeader({
       onClick={onSelect}
     >
       <div className="kensa-col-header-top">
-        <div className="kensa-col-name" title={column.name}>
+        <div
+          className="kensa-col-name"
+          title={`${column.name}  (double-click to copy name)`}
+          // Double-click on the name itself is the lowest-friction way
+          // to grab a column name — single click already selects + scrolls
+          // the side panel, so we don't want to overload it.
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            copyColumnName();
+          }}
+        >
           {hasFilter && <span className="kensa-col-filter-dot" title="Filter active" />}
           {column.name}
         </div>
@@ -213,6 +237,18 @@ export function ColumnHeader({
               </>
             )}
 
+            <div className="kensa-col-menu-section">Column</div>
+            <button
+              type="button"
+              className="kensa-col-menu-toggle"
+              onClick={copyColumnName}
+              role="menuitem"
+            >
+              <span className="kensa-col-menu-icon">⎘</span>
+              Copy column name
+            </button>
+
+            <div className="kensa-col-menu-divider" />
             <div className="kensa-col-menu-section">Sort</div>
             <SortItem
               active={activeSort?.ascending === true}

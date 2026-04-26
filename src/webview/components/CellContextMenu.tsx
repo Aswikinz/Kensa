@@ -31,6 +31,7 @@ interface Props {
   readonly onCopyValue: () => void;
   readonly onCopyRow: () => void;
   readonly onCopyColumn: () => void;
+  readonly onCopyColumnName: () => void;
   readonly onFilter: (op: FilterOp) => void;
   readonly onSort: (ascending: boolean) => void;
   readonly onClearColumnFilters: () => void;
@@ -101,6 +102,14 @@ export function CellContextMenu(props: Props) {
           label="Copy column (TSV)"
           onClick={() => {
             props.onCopyColumn();
+            onClose();
+          }}
+        />
+        <MenuItem
+          icon="ʟ"
+          label="Copy column name"
+          onClick={() => {
+            props.onCopyColumnName();
             onClose();
           }}
         />

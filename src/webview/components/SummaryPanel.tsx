@@ -111,17 +111,61 @@ export function SummaryPanel() {
     );
   }
 
-  const total = stats.count + stats.missing;
-  const missingPct = total > 0 ? formatPercent(stats.missing, total) : '—';
-  const uniquePct = total > 0 ? formatPercent(stats.distinct, total) : '—';
+  // Clamp the counts before computing percentages — `stats` can be
+  // stale relative to the post-filter `slice`, so the raw `missing`
+  // field could exceed the visible `total`. This used to surface as
+  // "147% missing" in the hero. The clamp keeps every percentage in
+  // the panel inside [0, 100] regardless of when stats were last
+  // refreshed.
+  const rawTotal = stats.count + stats.missing;
+  const total = rawTotal;
+  const clampedMissing = Math.min(Math.max(0, stats.missing), Math.max(0, total));
+  const clampedDistinct = Math.min(Math.max(0, stats.distinct), Math.max(0, total));
+  const missingPct = total > 0 ? formatPercent(clampedMissing, total) : '—';
+  const uniquePct = total > 0 ? formatPercent(clampedDistinct, total) : '—';
   const isNumeric = stats.mean !== null;
+
+  // 100% missing → bypass every other hero pick (numeric mean,
+  // categorical unique, etc.) because none of them carry meaningful
+  // information when there's no data to summarize. The viz panels
+  // also short-circuit downstream so we don't render an empty
+  // histogram/frequency chart.
+  const allMissing = total > 0 && clampedMissing >= total;
+  if (allMissing) {
+    return (
+      <div className="kensa-summary">
+        <div className="kensa-summary-title" title={col.name}>{col.name}</div>
+        <div className="kensa-summary-sub">{col.dtype}</div>
+        <div className="kensa-hero kensa-hero-accent">
+          <div className="kensa-hero-label">Missing</div>
+          <div className="kensa-hero-value">100%</div>
+          <div className="kensa-hero-sub">
+            {formatCount(total)} of {formatCount(total)} rows — no values to summarize
+          </div>
+        </div>
+        <div className="kensa-stat-grid">
+          <div className="kensa-stat-card kensa-stat-card-accent">
+            <div className="kensa-stat-card-label">Missing</div>
+            <div className="kensa-stat-card-value">{formatCount(total)}</div>
+          </div>
+          <div className="kensa-stat-card">
+            <div className="kensa-stat-card-label">Count</div>
+            <div className="kensa-stat-card-value">0</div>
+          </div>
+        </div>
+        <div className="kensa-summary-hint">
+          Drop or fill this column from the Operations panel to make it usable.
+        </div>
+      </div>
+    );
+  }
 
   // Hero stat picks a meaningful headline per column kind:
   //   - Numeric → mean (with std as sub)
   //   - Everything else → unique% (with top value as sub)
   // If missing% is >20% we override with a pink "X% missing" hero to flag
   // data-quality issues before anything else.
-  const missingNum = total > 0 ? (stats.missing / total) * 100 : 0;
+  const missingNum = total > 0 ? (clampedMissing / total) * 100 : 0;
   const heroIsMissing = missingNum >= 20;
 
   let heroLabel: string;
@@ -131,7 +175,7 @@ export function SummaryPanel() {
   if (heroIsMissing) {
     heroLabel = 'Missing';
     heroValue = missingPct;
-    heroSub = `${formatCount(stats.missing)} of ${formatCount(total)} rows — high, consider filling or dropping`;
+    heroSub = `${formatCount(clampedMissing)} of ${formatCount(total)} rows — high, consider filling or dropping`;
     heroClass = 'kensa-hero-accent';
   } else if (isNumeric) {
     heroLabel = 'Mean';
@@ -142,7 +186,7 @@ export function SummaryPanel() {
     heroValue = uniquePct;
     heroSub = stats.topValue !== null
       ? `top: ${String(stats.topValue)} (${formatCount(stats.topCount)}×)`
-      : `${formatCount(stats.distinct)} distinct`;
+      : `${formatCount(clampedDistinct)} distinct`;
   }
 
   return (
@@ -166,12 +210,12 @@ export function SummaryPanel() {
         >
           <div className="kensa-stat-card-label">Missing</div>
           <div className="kensa-stat-card-value">{missingPct}</div>
-          <div className="kensa-stat-card-sub">{formatCount(stats.missing)}</div>
+          <div className="kensa-stat-card-sub">{formatCount(clampedMissing)}</div>
         </div>
         <div className="kensa-stat-card kensa-stat-card-primary">
           <div className="kensa-stat-card-label">Unique</div>
           <div className="kensa-stat-card-value">{uniquePct}</div>
-          <div className="kensa-stat-card-sub">{formatCount(stats.distinct)} distinct</div>
+          <div className="kensa-stat-card-sub">{formatCount(clampedDistinct)} distinct</div>
         </div>
         {isNumeric && (
           <div className="kensa-stat-card">
