@@ -379,14 +379,29 @@ function AdvancedFilterForm({
         />
       </div>
       {showCaseToggle && (
-        <label className="kensa-adv-filter-checkbox">
-          <input
-            type="checkbox"
-            checked={ci}
-            onChange={(e) => setCi(e.target.checked)}
-          />
-          Case insensitive
-        </label>
+        // Aa-icon toggle replacing the native checkbox — same pattern
+        // VS Code uses in its search bar. The icon is the meaning ("A" +
+        // "a" together signals "matches both cases"), and the whole
+        // chip flips to the primary-blue active state when on. No
+        // native control involved, so it can't fall back to OS chrome.
+        <button
+          type="button"
+          className={`kensa-case-toggle ${ci ? 'kensa-case-toggle-active' : ''}`}
+          onClick={() => setCi(!ci)}
+          aria-pressed={ci}
+          title={
+            ci
+              ? 'Case insensitive — matching ignores letter case (click to enforce case)'
+              : 'Case sensitive — matching enforces letter case (click to ignore case)'
+          }
+        >
+          <span className="kensa-case-toggle-icon" aria-hidden>
+            Aa
+          </span>
+          <span className="kensa-case-toggle-label">
+            {ci ? 'Ignore case' : 'Match case'}
+          </span>
+        </button>
       )}
       <div className="kensa-adv-filter-actions">
         <button
