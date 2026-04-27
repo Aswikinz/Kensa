@@ -52,6 +52,11 @@ export class WebviewProvider implements vscode.Disposable {
         ]
       }
     );
+    // Custom tab icon — uses the same logo as the marketplace listing
+    // (`media/icon.png`) instead of VS Code's default three-lines glyph.
+    // Same icon for light + dark theme; VS Code scales the 256×256 PNG
+    // down to 16×16 for the tab strip.
+    panel.iconPath = this.kensaTabIcon();
 
     const kernelManager = new KernelManager(this.context.extensionPath, this.output);
     const router = new DataRouter(kernelManager);
@@ -149,6 +154,7 @@ export class WebviewProvider implements vscode.Disposable {
         ]
       }
     );
+    panel.iconPath = this.kensaTabIcon();
 
     const kernelManager = new KernelManager(this.context.extensionPath, this.output);
     const router = new DataRouter(kernelManager);
@@ -434,6 +440,23 @@ export class WebviewProvider implements vscode.Disposable {
 
   private post(entry: PanelEntry, msg: ExtensionToWebviewMessage): void {
     entry.panel.webview.postMessage(msg);
+  }
+
+  /** URI pair for the Kensa logo used as the panel's tab icon.
+   *
+   *  Uses an SVG (`media/icon-tab.svg`) rather than the marketplace PNG
+   *  (`media/icon.png`). VS Code scales the tab icon down to 16×16, and
+   *  bilinear-filtering a 128×128 PNG produced a faint white halo on
+   *  some themes — the partial-alpha edges of the strokes composited
+   *  against the tab background as light pixels. The SVG renders
+   *  crisply at the target size and preserves true transparency.
+   *
+   *  Both `light` and `dark` point at the same SVG: the colours
+   *  (`#1881C4` blue, `#EB078C` pink) read on either backdrop, so we
+   *  don't need theme-specific variants. */
+  private kensaTabIcon(): { light: vscode.Uri; dark: vscode.Uri } {
+    const uri = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'icon-tab.svg');
+    return { light: uri, dark: uri };
   }
 
   private renderHtml(webview: vscode.Webview): string {
