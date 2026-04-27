@@ -646,14 +646,15 @@
   gap: 3px;
   user-select: none;
   transition: background var(--kensa-motion);
-  /* Clip anything that would otherwise paint past the column's right
-     edge when the user resizes the column narrower than the content
-     (long names, long dtypes like `datetime64[ns, UTC]`, the all-missing
-     pink banner, etc.). Without this, those elements spill into the
-     neighbouring header. The resize handle stays clickable because it
-     sits at `right: -3px` — outside this overflow box but on the
-     header's relative-positioned z-stack. */
-  overflow: hidden;
+  /* Note: NO `overflow: hidden` on this element. An earlier fix put it
+     here to clip text + the all-missing banner during resize, but it
+     also clipped the absolutely-positioned column-menu popover and the
+     operator dropdown rendered inside it (their containing block is
+     this header, so they're caught by its overflow). Text clipping is
+     done at child level instead — `.kensa-col-header-top`,
+     `.kensa-col-name`, `.kensa-col-dtype`, and `.kensa-col-insight-viz`
+     each carry their own `overflow: hidden`, which keeps resize
+     behaviour tight without blocking the popovers. */
 }
 
 .kensa-col-header:hover {
@@ -675,11 +676,20 @@
      its `text-overflow: ellipsis` because flex items default to a
      min-width equal to their content. */
   min-width: 0;
+  /* Clip the name + menu-button row at narrow widths. Used to live on
+     the parent `.kensa-col-header` but moving it here lets the column
+     menu + operator dropdown popovers escape the header for rendering
+     (they're absolutely-positioned children of the header). */
+  overflow: hidden;
 }
 
 .kensa-col-name {
   font-weight: 600;
-  font-size: 12px;
+  /* Bumped 12 → 13.5px so column names read more clearly above their
+     dtype label and the dense quick-insight viz. The dtype below is
+     intentionally smaller (10px) — the size delta gives the name
+     visual primacy in the header stack. */
+  font-size: 13.5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1699,19 +1709,80 @@ select.kensa-input option {
   box-shadow: 0 2px 8px var(--kensa-primary-glow);
 }
 
-.kensa-adv-filter-checkbox {
+/* "Aa" toggle for the Advanced Filter case-sensitive switch — replaces
+ * the native checkbox (which read as out-of-place next to the gradient
+ * Apply button). Mirrors VS Code's search-bar pattern: a small chip
+ * with an icon-shaped "Aa" glyph that flips to the primary-blue
+ * active state when matching ignores case. The label text changes
+ * with state so the user knows what's on/off without hunting for a
+ * tick. */
+.kensa-case-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 10px;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 5px 10px 5px 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--kensa-border);
+  border-radius: var(--kensa-radius-sm);
   color: var(--kensa-muted);
   cursor: pointer;
-  user-select: none;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  transition: all var(--kensa-motion);
 }
 
-.kensa-adv-filter-checkbox input[type="checkbox"] {
-  accent-color: var(--kensa-primary);
-  margin: 0;
+.kensa-case-toggle:hover {
+  border-color: var(--kensa-border-strong);
+  color: var(--kensa-text);
+}
+
+.kensa-case-toggle:focus-visible {
+  outline: none;
+  border-color: var(--kensa-primary);
+  box-shadow: 0 0 0 2px rgba(24, 129, 196, 0.25);
+}
+
+.kensa-case-toggle-active {
+  background: var(--kensa-primary-soft);
+  border-color: rgba(24, 129, 196, 0.45);
+  color: var(--kensa-primary-strong);
+}
+
+.kensa-case-toggle-active:hover {
+  background: rgba(24, 129, 196, 0.22);
+  border-color: var(--kensa-primary);
+  color: var(--kensa-primary-strong);
+}
+
+.kensa-case-toggle-icon {
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  /* Render the "Aa" inside a small rounded badge so it's visually
+     distinct from the label and reads as an icon. The two letters
+     side by side already convey "this control toggles between
+     uppercase and lowercase matching". */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+}
+
+.kensa-case-toggle-active .kensa-case-toggle-icon {
+  background: var(--kensa-primary);
+  color: #fff;
+}
+
+.kensa-case-toggle-label {
+  font-weight: 500;
 }
 
 /* Active-filter chip row shown above the Advanced form — one chip per
@@ -1844,9 +1915,15 @@ select.kensa-input option {
   right: 0;
   z-index: 200;
   background: linear-gradient(180deg, #232326 0%, #1b1b1e 100%);
-  border: 1px solid var(--kensa-border-strong);
+  /* No solid border — the previous `1px solid kensa-border-strong`
+     read like a heavy frame around the dropdown, especially around the
+     scrollbar lane. A thin rim painted via box-shadow gives the same
+     edge definition without competing visually with the scrollbar. */
+  border: none;
   border-radius: var(--kensa-radius-md);
-  box-shadow: var(--kensa-shadow-lg);
+  box-shadow:
+    var(--kensa-shadow-lg),
+    0 0 0 1px var(--kensa-border);
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -1877,6 +1954,40 @@ select.kensa-input option {
   padding: 2px 0;
   overflow-y: auto;
   max-height: 240px;
+  /* Firefox-side overlay scrollbar — auto-hide effect. */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.kensa-col-picker-list:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+/* Webkit scrollbar override scoped to the picker list. The thumb is
+ * fully transparent until the user hovers the list, so the dropdown
+ * reads as a clean panel when idle and only paints the bar when it's
+ * being interacted with. Removes the visible bar-in-a-box look that
+ * the global static thumb produced inside this small popover. */
+.kensa-col-picker-list::-webkit-scrollbar {
+  width: 6px;
+}
+.kensa-col-picker-list::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 2px;
+}
+.kensa-col-picker-list::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: var(--kensa-radius-pill);
+  transition: background 200ms ease;
+}
+.kensa-col-picker-list:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+.kensa-col-picker-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+.kensa-col-picker-list::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .kensa-col-picker-option {
@@ -2245,21 +2356,28 @@ select.kensa-input option {
   color: var(--kensa-accent-strong);
 }
 
-/* Scrollbar — subtle, glass-friendly. */
+/* Scrollbar — minimal pill. The earlier version used a 2px transparent
+ * border + `background-clip: padding-box`, which looked like a faint
+ * box framing the thumb (the transparent ring read as a visible
+ * outline against the panel background). Now: 8px wide, no inset
+ * border, just a translucent thumb that brightens on hover. */
 .kensa-app ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 .kensa-app ::-webkit-scrollbar-track {
   background: transparent;
 }
+.kensa-app ::-webkit-scrollbar-corner {
+  background: transparent;
+}
 .kensa-app ::-webkit-scrollbar-thumb {
-  background: var(--kensa-surface-2);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: var(--kensa-radius-pill);
-  border: 2px solid transparent;
-  background-clip: padding-box;
 }
 .kensa-app ::-webkit-scrollbar-thumb:hover {
-  background: var(--kensa-surface-3);
-  background-clip: padding-box;
+  background: rgba(255, 255, 255, 0.22);
+}
+.kensa-app ::-webkit-scrollbar-thumb:active {
+  background: rgba(255, 255, 255, 0.3);
 }

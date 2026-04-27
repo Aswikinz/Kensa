@@ -4,6 +4,21 @@ All notable changes to Kensa are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Kensa follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] — 2026-04-27
+
+### Fixed
+
+- **Operator dropdown in the Advanced Filter wouldn't open in the
+  published 0.1.9 build** even though it worked in local dev installs.
+  Root cause: `.kensa-col-header` carried `overflow: hidden` (added in
+  the v0.1.9 resize-text fix), which clipped *every* absolute-positioned
+  descendant — including the `ThemedSelect` panel that the operator
+  dropdown renders into. The text-clipping responsibility moved one
+  level deeper to `.kensa-col-header-top` (the row with the column
+  name + menu button), so resizing a column narrow still ellipsises
+  long names but the column menu + operator dropdown can escape the
+  header for rendering.
+
 ## [0.1.9] — 2026-04-25
 
 Correctness + polish round driven by user feedback. No new top-level
@@ -571,6 +586,7 @@ First public release (never reached the marketplace — see 0.1.1).
 
 ---
 
+[0.1.10]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.10
 [0.1.9]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.9
 [0.1.8]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.8
 [0.1.7]: https://github.com/Aswikinz/Kensa/releases/tag/v0.1.7
