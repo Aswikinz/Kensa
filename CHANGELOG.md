@@ -4,6 +4,60 @@ All notable changes to Kensa are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Kensa follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] — 2026-04-30
+
+### Fixed
+
+- **Column-header insight strip stayed stuck on the loading shimmer
+  after applying a filter.** Two collaborating bugs: the webview's
+  `setSlice` reducer was unconditionally clearing the cached
+  `insights` array on every new slice (including pagination scrolls
+  and filter-driven slice updates), and the `applyFilter` /
+  `applySort` extension handlers shipped a fresh slice without
+  emitting a follow-up `allColumnInsights` to repopulate the cache.
+  The result: any filter, sort, or scroll left every column header
+  rendering its placeholder shimmer indefinitely. Fixed by (a)
+  preserving the insight cache in `setSlice` when the column
+  structure is unchanged (filter/sort/pagination keep the columns
+  identical, so the cached values stay valid), and (b) adding a
+  fire-and-forget `refreshInsights` after both `applyFilter` and
+  `applySort` so the chips actually update to reflect the post-view
+  data instead of staying frozen on the pre-filter distribution.
+  Rust's `get_all_quick_insights` also now projects each column
+  through `view_indices` before computing the histogram / frequency,
+  so a Rust-mode filter actually shows the filter's effect on the
+  distribution rather than re-emitting the unfiltered shape. Python's
+  helper already used `current_view()` and was correct.
+- **Filter chip in the toolbar wrapped onto two lines on a narrow
+  window**, putting "1" on the top row and "filter" below it inside
+  the same pink pill. Added `white-space: nowrap` + `flex-shrink: 0`
+  on the chip so it stays a single unbroken pill at any viewport
+  width — there's enough horizontal slack elsewhere in the toolbar
+  to absorb it.
+
+### Changed
+
+- **Low-cardinality columns now show plain `value · count` text rows
+  instead of three stubby horizontal bars.** The frequency-bar viz
+  carried no comparative information when there were only 1–3 unique
+  values; the rows just looked noisy and forced the user to read the
+  counts off a tooltip anyway. The text version is denser and the
+  exact counts are visible at a glance. Bars stay for ≥4-distinct
+  columns where relative magnitude is the useful signal.
+- **Tab title drops the `Kensa — ` prefix.** The panel tab now reads
+  just the file or variable name, matching VS Code's convention for
+  custom editors and giving more horizontal room for long file names.
+- **Wordmark in the top-left corner replaced with the brand logo
+  SVG.** Frees up some toolbar real estate on narrow windows and
+  matches the same icon used for the panel tab and marketplace
+  listing.
+- **`enum` parameter dropdowns in the operations panel now use the
+  same themed widget as column dropdowns.** Operations like Change
+  Type were rendering the column picker (themed) above the target
+  type picker (native browser `<select>`), so the two visibly
+  drifted apart on dark themes. Both dropdowns now share trigger
+  styling via a new `variant="form"` on `ThemedSelect`.
+
 ## [0.1.10] — 2026-04-27
 
 ### Fixed
