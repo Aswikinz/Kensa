@@ -142,14 +142,14 @@
   gap: 6px;
 }
 
+/* Brand mark — now hosts the logo SVG instead of the wordmark, so the
+ * gradient-text trick that used to colour the word "Kensa" is gone.
+ * The container just centres the logo at toolbar height; the SVG
+ * carries its own brand colours. */
 .kensa-brand {
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  font-size: 14px;
-  background: linear-gradient(135deg, var(--kensa-primary-strong) 0%, var(--kensa-accent-strong) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .kensa-filename {
@@ -2226,6 +2226,26 @@ select.kensa-input option {
   outline: none;
   border-color: var(--kensa-primary);
   box-shadow: 0 0 0 2px rgba(24, 129, 196, 0.22);
+}
+
+/* `form` variant — matches the ColumnPicker trigger so an enum dropdown
+ * (Target type, Aggregation, etc.) and a column dropdown sitting in
+ * the same parameter form read as a coherent pair. The defaults above
+ * stay tuned for the column-header filter popover, where the chip is
+ * embedded in a darker pop-out and wants the higher-contrast surface. */
+.kensa-themed-select-form .kensa-themed-select-trigger {
+  padding: 7px 10px;
+  background: var(--kensa-surface-1);
+  font-size: 12px;
+}
+
+.kensa-themed-select-form .kensa-themed-select-trigger:hover {
+  background: var(--kensa-surface-2);
+}
+
+.kensa-themed-select-form.kensa-themed-select-open .kensa-themed-select-trigger,
+.kensa-themed-select-form .kensa-themed-select-trigger:focus-visible {
+  box-shadow: 0 0 0 3px rgba(24, 129, 196, 0.18);
 }
 
 .kensa-themed-select-label {

@@ -41,7 +41,7 @@ export class WebviewProvider implements vscode.Disposable {
 
     const panel = vscode.window.createWebviewPanel(
       'kensa',
-      `Kensa — ${path.basename(uri.fsPath)}`,
+      path.basename(uri.fsPath),
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
@@ -143,7 +143,7 @@ export class WebviewProvider implements vscode.Disposable {
 
     const panel = vscode.window.createWebviewPanel(
       'kensa',
-      `Kensa — ${name}`,
+      name,
       vscode.ViewColumn.Active,
       {
         enableScripts: true,

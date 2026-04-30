@@ -2,11 +2,12 @@
 // parameter kind maps to a small inline component; on Apply we ship the full
 // params bag to the extension host as an applyOperation message.
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { humanizeOption, type OperationSpec, type ParameterSchema } from '../../shared/operations';
 import { useKensaStore } from '../state/store';
 import { postMessage } from '../vscodeApi';
 import { ColumnPicker } from './ColumnPicker';
+import { ThemedSelect } from './ThemedSelect';
 
 interface Props {
   readonly operation: OperationSpec;
@@ -115,18 +116,23 @@ function renderField(
         />
       );
     case 'enum':
+      // Render via ThemedSelect (same component the Advanced Filter
+      // form uses) instead of a native `<select>`. Two reasons:
+      //  - On dark themes the OS option-list styling for `<select>`
+      //    pops up white-on-white and was visually inconsistent with
+      //    the pink-themed ColumnPicker right above it in this same
+      //    form.
+      //  - The trigger now matches the ColumnPicker's chrome, so
+      //    "column" and "target type" rows in operations like Change
+      //    Type read as a coherent pair instead of two different
+      //    widget styles stacked together.
       return (
-        <select
-          className="kensa-input"
+        <EnumSelect
           value={String(value ?? '')}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          {(param.options ?? []).map((opt) => (
-            <option key={opt} value={opt}>
-              {param.optionLabels?.[opt] ?? humanizeOption(opt)}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => onChange(v)}
+          options={param.options ?? []}
+          optionLabels={param.optionLabels}
+        />
       );
     case 'boolean':
       return (
@@ -152,4 +158,39 @@ function renderField(
     default:
       return null;
   }
+}
+
+/** Themed enum dropdown. Mirrors the `<select>`-equivalent surface area
+ *  but renders through `ThemedSelect` so it matches the ColumnPicker
+ *  beside it. The options array is memoized because `ThemedSelect`
+ *  takes a `ReadonlyArray<{value, label}>` rather than the bare
+ *  string list this component stores in the operation schema. */
+function EnumSelect({
+  value,
+  onChange,
+  options,
+  optionLabels
+}: {
+  readonly value: string;
+  readonly onChange: (v: string) => void;
+  readonly options: readonly string[];
+  readonly optionLabels?: Record<string, string>;
+}) {
+  const opts = useMemo(
+    () =>
+      options.map((opt) => ({
+        value: opt,
+        label: optionLabels?.[opt] ?? humanizeOption(opt)
+      })),
+    [options, optionLabels]
+  );
+  return (
+    <ThemedSelect
+      value={value}
+      options={opts}
+      onChange={onChange}
+      variant="form"
+      placeholder="— select —"
+    />
+  );
 }

@@ -21,10 +21,16 @@ interface Props<T extends string> {
   readonly onChange: (value: T) => void;
   readonly ariaLabel?: string;
   readonly placeholder?: string;
+  /** Visual variant. `compact` is the original tightly-packed look used
+   *  inside the column-header filter popover. `form` matches the
+   *  ColumnPicker trigger styling so this control can sit alongside a
+   *  ColumnPicker (e.g. in the operations parameter form) without the
+   *  two widgets visibly drifting apart. */
+  readonly variant?: 'compact' | 'form';
 }
 
 export function ThemedSelect<T extends string>(props: Props<T>) {
-  const { value, options, onChange, ariaLabel, placeholder } = props;
+  const { value, options, onChange, ariaLabel, placeholder, variant = 'compact' } = props;
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -48,7 +54,15 @@ export function ThemedSelect<T extends string>(props: Props<T>) {
   }, [open]);
 
   return (
-    <div className={`kensa-themed-select ${open ? 'kensa-themed-select-open' : ''}`}>
+    <div
+      className={[
+        'kensa-themed-select',
+        `kensa-themed-select-${variant}`,
+        open ? 'kensa-themed-select-open' : ''
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       <button
         ref={triggerRef}
         type="button"

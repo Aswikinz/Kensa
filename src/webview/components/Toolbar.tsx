@@ -18,6 +18,7 @@ import {
   CodeIcon,
   ExportIcon,
   FilterIcon,
+  KensaLogo,
   OperationsIcon,
   RefreshIcon,
   SearchIcon,
@@ -93,7 +94,9 @@ export function Toolbar() {
   return (
     <div className="kensa-toolbar">
       <div className="kensa-toolbar-left">
-        <div className="kensa-brand">Kensa</div>
+        <div className="kensa-brand" aria-label="Kensa">
+          <KensaLogo size={22} />
+        </div>
         <div className="kensa-filename" title={fileName}>
           {fileName}
         </div>
