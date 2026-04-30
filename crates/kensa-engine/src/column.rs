@@ -72,6 +72,35 @@ impl ColumnData {
     pub fn count_missing(&self) -> usize {
         (0..self.len()).filter(|&i| self.is_missing(i)).count()
     }
+
+    /// Return a copy of this column containing only the rows at `indices`,
+    /// in the order given. Used by quick-insight computation so the column
+    /// header histogram / frequency bars reflect the active sort+filter
+    /// view rather than the underlying dataset. Out-of-range indices are
+    /// materialized as missing cells so callers can't accidentally produce
+    /// a panic on a malformed `view_indices`.
+    pub fn filter_by_indices(&self, indices: &[usize]) -> ColumnData {
+        match self {
+            ColumnData::Int64(v) => ColumnData::Int64(
+                indices.iter().map(|&i| v.get(i).copied().flatten()).collect(),
+            ),
+            ColumnData::Float64(v) => ColumnData::Float64(
+                indices.iter().map(|&i| v.get(i).copied().flatten()).collect(),
+            ),
+            ColumnData::Utf8(v) => ColumnData::Utf8(
+                indices
+                    .iter()
+                    .map(|&i| v.get(i).cloned().flatten())
+                    .collect(),
+            ),
+            ColumnData::Boolean(v) => ColumnData::Boolean(
+                indices.iter().map(|&i| v.get(i).copied().flatten()).collect(),
+            ),
+            ColumnData::DateTime(v) => ColumnData::DateTime(
+                indices.iter().map(|&i| v.get(i).copied().flatten()).collect(),
+            ),
+        }
+    }
 }
 
 fn format_float(x: f64) -> String {

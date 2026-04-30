@@ -156,22 +156,33 @@ export const useKensaStore = create<KensaState>((set) => ({
   showCodePreview: false,
 
   setSlice: (slice) =>
-    // Replace the slice AND drop the cached column stats / insights —
-    // the previous values were computed against the *old* slice, so
-    // keeping them around makes the summary panel show stale numbers
-    // after a refresh / re-load. The empty caches force a re-fetch of
-    // the currently-selected column's detailed stats and let the next
-    // `allColumnInsights` message replace the per-column visualizations
-    // in the headers without leaving them stuck on pre-refresh data.
-    set({
-      slice,
-      loading: false,
-      error: null,
-      previewSlice: null,
-      previewDiff: null,
-      previewChangedMask: [],
-      statsByColumn: {},
-      insights: []
+    set((s) => {
+      // Drop the cached column stats / insights only when the column
+      // structure actually changed (different names or count) — that's
+      // the case where the previous values were computed against an
+      // unrelated dataset (refresh, mode swap, file reload). For
+      // pagination, filter, and sort the columns are the same, so the
+      // cached values stay valid and we keep them. The previous
+      // unconditional reset left the column-header strip frozen on
+      // its shimmer placeholder forever after a filter or a scroll
+      // past the first page, because the extension only re-emits
+      // `allColumnInsights` on a subset of those events.
+      const prevNames = s.slice?.columns.map((c) => c.name) ?? null;
+      const nextNames = slice.columns.map((c) => c.name);
+      const sameColumns =
+        prevNames !== null &&
+        prevNames.length === nextNames.length &&
+        prevNames.every((n, i) => n === nextNames[i]);
+      return {
+        slice,
+        loading: false,
+        error: null,
+        previewSlice: null,
+        previewDiff: null,
+        previewChangedMask: [],
+        statsByColumn: sameColumns ? s.statsByColumn : {},
+        insights: sameColumns ? s.insights : []
+      };
     }),
   setPreview: (slice, diff, changedMask, code) =>
     set({

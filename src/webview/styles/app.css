@@ -208,7 +208,17 @@
   padding: 4px 10px;
 }
 
-/* Filter badge — pink pill, prominent but not loud. */
+/* Filter badge — pink pill, prominent but not loud.
+ *
+ * `white-space: nowrap` + `flex-shrink: 0` keep the chip as a single
+ * unbroken pill no matter how narrow the toolbar gets. Without these,
+ * a tight viewport caused the inner "1 filter 16" label to wrap onto
+ * two lines inside the pill, producing a tall lopsided badge with
+ * "1" on the top row and "filter" on the bottom row. The chrome
+ * around the badge (engine indicator, row counts, icon buttons)
+ * already squeezes its own widths down, so leaving the badge whole
+ * doesn't crowd anything else out — there's enough horizontal slack
+ * elsewhere. */
 .kensa-filter-badge {
   display: inline-flex;
   align-items: center;
@@ -223,6 +233,8 @@
   font-family: inherit;
   cursor: pointer;
   transition: all var(--kensa-motion);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .kensa-filter-badge:hover {
@@ -241,6 +253,7 @@
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .kensa-filter-badge-ratio {
@@ -975,6 +988,43 @@
   );
   opacity: 0.9;
   border-radius: 3px;
+}
+
+/* `value · count` rows for low-cardinality columns. Replaces the
+ * horizontal frequency bars when the column only has 1–3 distinct
+ * values, where the bars conveyed nothing the raw counts don't. The
+ * label is left-aligned and truncated with ellipsis; the count is
+ * right-aligned with tabular numerals so successive rows visually
+ * stack into a clean column. */
+.kensa-counts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.kensa-counts-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.kensa-counts-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--kensa-text);
+}
+
+.kensa-counts-value {
+  flex: 0 0 auto;
+  color: var(--kensa-primary-strong);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .kensa-insight-stats {

@@ -1,6 +1,10 @@
-// Compact visualization inside each column header. Two layouts:
+// Compact visualization inside each column header. Three layouts:
 //   - numeric/datetime → tiny histogram bars
-//   - categorical/boolean → top-N horizontal frequency bars
+//   - categorical/boolean with ≥4 distinct values → top-3 horizontal
+//     frequency bars (relative magnitude is the useful signal there)
+//   - categorical/boolean with ≤3 distinct values → plain `value · count`
+//     text rows (3 stubby bars convey nothing the raw counts don't, and
+//     the bars only made the column header noisier)
 //
 // Stats row now reads as `14% missing · 78% unique` instead of raw counts.
 // Percentages answer the question "is this column healthy?" at a glance
@@ -10,8 +14,14 @@
 // apart without a legend.
 
 import type { QuickInsight } from '../../shared/types';
-import { formatPercent } from '../formatters';
+import { formatCompact, formatPercent } from '../formatters';
 import { useKensaStore } from '../state/store';
+
+/** Below this distinct count, frequency-based columns render as a clean
+ *  `value · count` list rather than horizontal bars. With 1–3 unique
+ *  values the bars carry no comparative information that the numbers
+ *  don't already, and they made the header strip harder to read. */
+const COUNT_LIST_THRESHOLD = 3;
 
 interface Props {
   readonly insight: QuickInsight;
@@ -90,6 +100,33 @@ export function QuickInsightViz({ insight }: Props) {
   }
 
   if (insight.frequency && insight.frequency.length > 0) {
+    // Few-distinct-values branch: render `value · count` rows. A 3-bar
+    // chart for a 3-category column is just visual noise — three
+    // identical-looking stubs the eye has to map back onto the labels.
+    // The plain text version is denser, more readable, and makes the
+    // exact counts available without a hover tooltip.
+    const isLowCardinality = clampedDistinct > 0 && clampedDistinct <= COUNT_LIST_THRESHOLD;
+    if (isLowCardinality) {
+      return (
+        <>
+          <div className="kensa-col-insight-viz">
+            <div className="kensa-counts">
+              {insight.frequency.slice(0, COUNT_LIST_THRESHOLD).map((f, i) => (
+                <div
+                  key={i}
+                  className="kensa-counts-row"
+                  title={`${f.value}: ${f.count.toLocaleString()}`}
+                >
+                  <span className="kensa-counts-label">{f.value}</span>
+                  <span className="kensa-counts-value">{formatCompact(f.count)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {stats}
+        </>
+      );
+    }
     const max = Math.max(...insight.frequency.map((f) => f.count));
     return (
       <>

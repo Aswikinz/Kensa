@@ -289,6 +289,13 @@ export class WebviewProvider implements vscode.Disposable {
           await router.applySort(msg.sort);
           const slice = await router.getSlice(0, DEFAULT_PAGE_SIZE);
           this.post(entry, { type: 'dataSlice', slice });
+          // The webview clears its cached insights whenever a fresh slice
+          // arrives (so old per-column visualizations don't linger when
+          // the data shape changes). Re-emit insights here so the
+          // header strip stops shimmering and reflects the current
+          // sorted view. Sort doesn't actually change the per-column
+          // distribution, but the cleared cache still needs refilling.
+          this.refreshInsights(entry);
           break;
         }
 
@@ -296,6 +303,11 @@ export class WebviewProvider implements vscode.Disposable {
           await router.applyFilter(msg.filters);
           const slice = await router.getSlice(0, DEFAULT_PAGE_SIZE);
           this.post(entry, { type: 'dataSlice', slice });
+          // Same reason as `applySort`: the webview drops its insights
+          // cache on every new slice. Without a follow-up
+          // `allColumnInsights`, the column header strip stays in its
+          // shimmer placeholder forever after a filter is applied.
+          this.refreshInsights(entry);
           break;
         }
 
@@ -440,6 +452,21 @@ export class WebviewProvider implements vscode.Disposable {
 
   private post(entry: PanelEntry, msg: ExtensionToWebviewMessage): void {
     entry.panel.webview.postMessage(msg);
+  }
+
+  /** Fire-and-forget insight refresh. The webview drops its insights cache
+   *  every time a new `dataSlice` arrives, so any code path that ships a
+   *  slice (filter, sort, refresh, mode-switch) needs to follow up with a
+   *  fresh `allColumnInsights` or the column header strip is left in its
+   *  loading placeholder indefinitely. We swallow errors — insights are a
+   *  visual nicety, not load-bearing for the grid itself. */
+  private refreshInsights(entry: PanelEntry): void {
+    entry.router
+      .getAllInsights()
+      .then((insights) => this.post(entry, { type: 'allColumnInsights', insights }))
+      .catch((err) =>
+        this.output.appendLine(`[kensa] refresh insights failed: ${String(err)}`)
+      );
   }
 
   /** URI pair for the Kensa logo used as the panel's tab icon.

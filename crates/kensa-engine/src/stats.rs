@@ -229,4 +229,26 @@ mod tests {
         assert_eq!(s.missing, 1);
         assert_eq!(s.top_value.as_deref(), Some("A"));
     }
+
+    #[test]
+    fn quick_insight_on_filtered_subset_uses_subset_distinct() {
+        // The whole column has 3 distinct values; the filtered view (rows
+        // 0 and 2) only has 1. quick_insight on the filtered column
+        // should reflect the smaller cardinality, which is the property
+        // that lets the column-header viz update post-filter.
+        let col = ColumnData::Utf8(vec![
+            Some("A".into()),
+            Some("B".into()),
+            Some("A".into()),
+            Some("C".into()),
+        ]);
+        let filtered = col.filter_by_indices(&[0, 2]);
+        let insight = quick_insight(&filtered, "x", 0);
+        assert_eq!(insight.distinct, 1);
+        assert_eq!(insight.missing, 0);
+        let freq = insight.frequency.expect("Utf8 column should emit frequency");
+        assert_eq!(freq.len(), 1);
+        assert_eq!(freq[0].value, "A");
+        assert_eq!(freq[0].count, 2);
+    }
 }

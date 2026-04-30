@@ -155,9 +155,17 @@ impl DataEngine {
 
     /// Compute quick insights (tiny histogram or frequency bars) for every
     /// column in parallel via rayon. This is what the column headers render.
+    ///
+    /// When `view_indices` is set (sort or filter active), each column is
+    /// projected through it before computing the insight so the histogram
+    /// / frequency bars reflect the rows the user is actually looking at.
+    /// Without this, applying a filter would leave the headers showing the
+    /// pre-filter distribution — confusing, especially after a heavy
+    /// filter that drops most rows.
     #[napi]
     pub fn get_all_quick_insights(&self) -> Result<Vec<QuickInsight>> {
         let df = self.require_df()?;
+        let view = self.view_indices.as_deref();
         // `.zip()` pairs each column with its matching name in lockstep,
         // eliminating the `names[i]` indexing that the previous version
         // used. CodeQL's Rust extractor couldn't prove that
@@ -171,7 +179,13 @@ impl DataEngine {
             .par_iter()
             .zip(df.column_names.par_iter())
             .enumerate()
-            .map(|(i, (col, name))| stats::quick_insight(col, name.as_str(), i as u32))
+            .map(|(i, (col, name))| match view {
+                Some(indices) => {
+                    let filtered = col.filter_by_indices(indices);
+                    stats::quick_insight(&filtered, name.as_str(), i as u32)
+                }
+                None => stats::quick_insight(col, name.as_str(), i as u32),
+            })
             .collect();
         Ok(insights)
     }
