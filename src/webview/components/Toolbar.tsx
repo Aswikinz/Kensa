@@ -34,7 +34,7 @@ export function Toolbar() {
   const source = useKensaStore((s) => s.source);
   const switching = useKensaStore((s) => s.switching);
   const activeFilters = useKensaStore((s) => s.activeFilters);
-  const activeSort = useKensaStore((s) => s.activeSort);
+  const activeSorts = useKensaStore((s) => s.activeSorts);
   const showSummaryPanel = useKensaStore((s) => s.showSummaryPanel);
   const showOperationsPanel = useKensaStore((s) => s.showOperationsPanel);
   const showCodePreview = useKensaStore((s) => s.showCodePreview);
@@ -47,7 +47,8 @@ export function Toolbar() {
   const rowCount = slice?.totalRows ?? 0;
   const colCount = slice?.columns.length ?? 0;
   const filterCount = activeFilters.length;
-  const hasView = filterCount > 0 || activeSort !== null;
+  const sortCount = activeSorts.length;
+  const hasView = filterCount > 0 || sortCount > 0;
 
   // Whole-dataset completeness — non-missing cells / total cells.
   //
@@ -134,17 +135,18 @@ export function Toolbar() {
             type="button"
             className="kensa-filter-badge"
             onClick={clearAllFilters}
-            title={
-              filterCount > 0
-                ? `${filterCount} filter${filterCount === 1 ? '' : 's'} active — click to clear all`
-                : 'Active sort — click to clear'
-            }
+            title={describeView(filterCount, sortCount)}
           >
             <FilterIcon size={14} />
             <span className="kensa-filter-badge-label">
               {filterCount > 0 ? (
                 <>
                   {filterCount} filter{filterCount === 1 ? '' : 's'}
+                  {sortCount > 0 && (
+                    <>
+                      {' '}· {sortCount} sort{sortCount === 1 ? '' : 's'}
+                    </>
+                  )}
                   {/* Filtered/total counter gives the user the "hit rate"
                       of their filter at a glance without opening the
                       summary panel. Omitted when only sort is active
@@ -154,7 +156,9 @@ export function Toolbar() {
                   </span>
                 </>
               ) : (
-                'Sorted'
+                <>
+                  {sortCount} sort{sortCount === 1 ? '' : 's'}
+                </>
               )}
             </span>
             <span className="kensa-filter-badge-close">×</span>
@@ -200,7 +204,19 @@ export function Toolbar() {
               ? 'Refresh from notebook variable'
               : 'Re-read file from disk'
           }
-          onClick={() => postMessage({ type: 'refreshSource' })}
+          // Ship the current view (filters + sorts) along with the
+          // refresh request. The extension reloads the underlying data
+          // — which resets the backend's view-state — and then re-
+          // applies these so the chip and the data shown stay in
+          // sync. Without this hand-off the backend would come back
+          // unfiltered while the webview UI still claimed it was.
+          onClick={() =>
+            postMessage({
+              type: 'refreshSource',
+              filters: activeFilters,
+              sorts: activeSorts
+            })
+          }
         >
           <RefreshIcon />
         </IconButton>
@@ -234,6 +250,20 @@ export function Toolbar() {
       </div>
     </div>
   );
+}
+
+/** Build the tooltip for the filter+sort chip. Reflects whichever
+ *  combination is active; "click to clear all" matches the chip's
+ *  click handler so the user knows what hitting × will undo. */
+function describeView(filterCount: number, sortCount: number): string {
+  const parts: string[] = [];
+  if (filterCount > 0) {
+    parts.push(`${filterCount} filter${filterCount === 1 ? '' : 's'}`);
+  }
+  if (sortCount > 0) {
+    parts.push(`${sortCount} sort key${sortCount === 1 ? '' : 's'}`);
+  }
+  return `${parts.join(' + ')} active — click to clear all`;
 }
 
 /** Search pill that jumps to a column by name match. Typing triggers a

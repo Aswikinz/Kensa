@@ -286,7 +286,7 @@ export class WebviewProvider implements vscode.Disposable {
         }
 
         case 'applySort': {
-          await router.applySort(msg.sort);
+          await router.applySort(msg.sorts);
           const slice = await router.getSlice(0, DEFAULT_PAGE_SIZE);
           this.post(entry, { type: 'dataSlice', slice });
           // The webview clears its cached insights whenever a fresh slice
@@ -391,17 +391,39 @@ export class WebviewProvider implements vscode.Disposable {
             `[kensa] refresh requested for source=${router.currentSource?.kind ?? 'none'}`
           );
           await router.refresh();
-          const slice = await router.getSlice(0, DEFAULT_PAGE_SIZE);
+          // Pull a slice once so `lastSlice` is populated — it's used by
+          // applyFilter / applySort to translate column indices into
+          // names for the Python backend. Without this priming step the
+          // re-application below would silently drop every filter when
+          // running in editing mode.
+          let slice = await router.getSlice(0, DEFAULT_PAGE_SIZE);
           entry.lastSlice = slice;
+          // Re-apply the view the user had before the refresh, so the
+          // chip and the data shown stay in sync. We accept the lists
+          // from the webview rather than tracking them on the extension
+          // side because the webview is the source of truth for the
+          // active view.
+          //
+          // If a filter references a column that no longer exists (e.g.
+          // the user re-ran the upstream cell and dropped it), the
+          // backend silently skips that filter at apply time — better
+          // than failing the whole refresh.
+          const filters = msg.filters ?? [];
+          const sorts = msg.sorts ?? [];
+          if (filters.length > 0) {
+            await router.applyFilter(filters);
+          }
+          if (sorts.length > 0) {
+            await router.applySort(sorts);
+          }
+          if (filters.length > 0 || sorts.length > 0) {
+            slice = await router.getSlice(0, DEFAULT_PAGE_SIZE);
+            entry.lastSlice = slice;
+          }
           this.post(entry, { type: 'dataSlice', slice });
           // Also refresh the column insights since the data shape may have
           // changed completely (different rows, different stats).
-          router
-            .getAllInsights()
-            .then((insights) => this.post(entry, { type: 'allColumnInsights', insights }))
-            .catch((err) =>
-              this.output.appendLine(`[kensa] post-refresh insights failed: ${String(err)}`)
-            );
+          this.refreshInsights(entry);
           break;
         }
 

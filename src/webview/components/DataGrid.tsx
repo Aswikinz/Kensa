@@ -121,7 +121,7 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
   const addFilter = useKensaStore((s) => s.addFilter);
   const activeFilters = useKensaStore((s) => s.activeFilters);
   const removeColumnFilter = useKensaStore((s) => s.removeColumnFilter);
-  const applySort = useKensaStore((s) => s.applySort);
+  const toggleSort = useKensaStore((s) => s.toggleSort);
 
   const writeClipboard = (text: string, successToast: { label: string; value?: string }) => {
     navigator.clipboard
@@ -498,7 +498,7 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
             });
           }}
           onSort={(ascending) =>
-            applySort({ columnIndex: contextTarget.colIdx, ascending })
+            toggleSort({ columnIndex: contextTarget.colIdx, ascending })
           }
           onClearColumnFilters={() => removeColumnFilter(contextTarget.colIdx)}
           hasColumnFilters={activeFilters.some(

@@ -162,19 +162,28 @@ export class DataRouter {
     return backend.getAllInsights();
   }
 
-  async applySort(sort: SortSpec | null): Promise<void> {
+  async applySort(sorts: SortSpec[]): Promise<void> {
     if (this.mode === 'viewing' && this.rustEngine) {
-      if (sort) this.rustEngine.sort(sort.columnIndex, sort.ascending);
-      else this.rustEngine.resetView();
+      // The Rust engine now composes filter + sort internally, so we
+      // pass the empty list through rather than calling `resetView`
+      // (which would also wipe any active filter). The engine treats
+      // an empty `sorts` list as "no sort", recomputing `view_indices`
+      // from just the active filters.
+      this.rustEngine.sort(sorts.map((s) => ({ columnIndex: s.columnIndex, ascending: s.ascending })));
       return;
     }
-    // Editing mode: set the TRANSIENT view sort on the Python backend. It's
-    // a view-level mask, not a step, so clearing it instantly restores the
-    // unsorted order without touching the step history.
+    // Editing mode: push the multi-key sort to the Python backend as a
+    // transient view-level sort. It's not a Pandas step, so clearing
+    // the list instantly restores unsorted order without rewriting
+    // the step history.
     const backend = await this.kernelManager.ensureBackend();
-    const columnName =
-      sort && this.lastSlice ? this.lastSlice.columns[sort.columnIndex]?.name ?? '' : '';
-    await backend.setViewSort(sort && columnName ? { column: columnName, ascending: sort.ascending } : null);
+    const payload = sorts
+      .map((s) => ({
+        column: this.lastSlice?.columns[s.columnIndex]?.name ?? '',
+        ascending: s.ascending
+      }))
+      .filter((s) => s.column !== '');
+    await backend.setViewSort(payload);
   }
 
   async applyFilter(filters: FilterSpec[]): Promise<void> {
