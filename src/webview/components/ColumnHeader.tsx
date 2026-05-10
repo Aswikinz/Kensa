@@ -46,14 +46,21 @@ export function ColumnHeader({
     s.insights.find((i) => i.columnIndex === column.index) ?? null
   );
   const allFilters = useKensaStore((s) => s.activeFilters);
-  const activeSort = useKensaStore((s) =>
-    s.activeSort?.columnIndex === column.index ? s.activeSort : null
-  );
+  // Pull this column's sort entry plus its priority slot in the global
+  // sort list. The badge in the menu reads "↑ 2" for the secondary
+  // sort, "↑ 3" for the tertiary, etc. — same convention Excel uses
+  // for multi-column sort. `null` when this column isn't sorted.
+  const activeSort = useKensaStore((s) => {
+    const idx = s.activeSorts.findIndex((x) => x.columnIndex === column.index);
+    const sort = idx === -1 ? undefined : s.activeSorts[idx];
+    if (idx === -1 || !sort) return null;
+    return { sort, priority: idx + 1, total: s.activeSorts.length };
+  });
   const addOrReplaceColumnFilter = useKensaStore((s) => s.addOrReplaceColumnFilter);
   const addFilter = useKensaStore((s) => s.addFilter);
   const removeColumnFilter = useKensaStore((s) => s.removeColumnFilter);
   const removeFilterAt = useKensaStore((s) => s.removeFilterAt);
-  const applySort = useKensaStore((s) => s.applySort);
+  const toggleSortStore = useKensaStore((s) => s.toggleSort);
 
   // Filters active on *this* column specifically, with their global index
   // preserved so `removeFilterAt` can target the exact instance to drop.
@@ -64,10 +71,18 @@ export function ColumnHeader({
         .filter(({ filter }) => filter.columnIndex === column.index),
     [allFilters, column.index]
   );
-  const quickFilter = columnFilters.find(({ filter }) =>
-    QUICK_OPS.includes(filter.op)
-  );
-  const activeQuickOp = quickFilter?.filter.op ?? null;
+  // Each column can carry one quick filter from each conflict group
+  // (missing/not-missing, duplicated/unique) simultaneously, so the UI
+  // tracks the *set* of active quick ops rather than a single one.
+  // The four `ToggleItem` rows below light up independently from
+  // this set.
+  const activeQuickOps = useMemo(() => {
+    const out = new Set<FilterOp>();
+    for (const { filter } of columnFilters) {
+      if (QUICK_OPS.includes(filter.op)) out.add(filter.op);
+    }
+    return out;
+  }, [columnFilters]);
   const hasFilter = columnFilters.length > 0;
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -131,17 +146,22 @@ export function ColumnHeader({
 
   const toggleSort = (ascending: boolean) => {
     setMenuOpen(false);
-    if (activeSort && activeSort.ascending === ascending) {
-      applySort(null);
-    } else {
-      applySort({ columnIndex: column.index, ascending });
-    }
+    // Defer toggle/append/flip semantics to the store. Clicking the
+    // currently-active direction removes the entry; clicking the
+    // opposite flips it; clicking on a brand-new column appends at
+    // the end (next sort priority).
+    toggleSortStore({ columnIndex: column.index, ascending });
   };
 
   const toggleQuickFilter = (op: FilterOp) => {
     setMenuOpen(false);
-    if (activeQuickOp === op && quickFilter) {
-      removeFilterAt(quickFilter.idx);
+    // If this exact op is already active on this column → remove it.
+    // Otherwise add (and let the store evict only the *conflicting*
+    // op from the same group, leaving the other group's quick filter
+    // intact so missing+unique can coexist).
+    const existing = columnFilters.find(({ filter }) => filter.op === op);
+    if (existing) {
+      removeFilterAt(existing.idx);
     } else {
       addOrReplaceColumnFilter({ columnIndex: column.index, op });
     }
@@ -249,15 +269,25 @@ export function ColumnHeader({
             </button>
 
             <div className="kensa-col-menu-divider" />
-            <div className="kensa-col-menu-section">Sort</div>
+            <div className="kensa-col-menu-section">
+              Sort
+              {activeSort && activeSort.total > 1 && (
+                <span
+                  className="kensa-col-menu-section-badge"
+                  title={`Sort priority ${activeSort.priority} of ${activeSort.total}`}
+                >
+                  #{activeSort.priority}
+                </span>
+              )}
+            </div>
             <SortItem
-              active={activeSort?.ascending === true}
+              active={activeSort?.sort.ascending === true}
               label="Sort ascending"
               arrow="↑"
               onClick={() => toggleSort(true)}
             />
             <SortItem
-              active={activeSort?.ascending === false}
+              active={activeSort?.sort.ascending === false}
               label="Sort descending"
               arrow="↓"
               onClick={() => toggleSort(false)}
@@ -266,22 +296,22 @@ export function ColumnHeader({
             <div className="kensa-col-menu-divider" />
             <div className="kensa-col-menu-section">Quick filters</div>
             <ToggleItem
-              active={activeQuickOp === 'is_not_missing'}
+              active={activeQuickOps.has('is_not_missing')}
               label="Hide missing"
               onClick={() => toggleQuickFilter('is_not_missing')}
             />
             <ToggleItem
-              active={activeQuickOp === 'is_missing'}
+              active={activeQuickOps.has('is_missing')}
               label="Only missing"
               onClick={() => toggleQuickFilter('is_missing')}
             />
             <ToggleItem
-              active={activeQuickOp === 'is_duplicated'}
+              active={activeQuickOps.has('is_duplicated')}
               label="Only duplicates"
               onClick={() => toggleQuickFilter('is_duplicated')}
             />
             <ToggleItem
-              active={activeQuickOp === 'is_unique'}
+              active={activeQuickOps.has('is_unique')}
               label="Only unique values"
               onClick={() => toggleQuickFilter('is_unique')}
             />

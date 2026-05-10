@@ -38,7 +38,7 @@ type BackendCommand =
       new: Array<Array<string | null>>;
     }
   | { cmd: 'set_view_filters'; filters: Array<{ column: string; op: string; value?: string }> }
-  | { cmd: 'set_view_sort'; sort: { column: string; ascending: boolean } | null };
+  | { cmd: 'set_view_sort'; sorts: Array<{ column: string; ascending: boolean }> };
 
 /** A preview slice chunk returned by Python. Mirrors DataSlice but adds a
  *  per-cell `changedMask` the grid uses to paint diff highlights for only
@@ -216,8 +216,10 @@ export class PythonBackend {
 
   /** Replace the transient view sort on the Python side. Pass `null` to
    *  clear. Returns a fresh first-page slice. */
-  async setViewSort(sort: { column: string; ascending: boolean } | null): Promise<DataSlice> {
-    return (await this.request({ cmd: 'set_view_sort', sort })) as DataSlice;
+  async setViewSort(
+    sorts: Array<{ column: string; ascending: boolean }>
+  ): Promise<DataSlice> {
+    return (await this.request({ cmd: 'set_view_sort', sorts })) as DataSlice;
   }
 
   async applyCode(code: string, step: OperationStep): Promise<DataSlice> {

@@ -74,8 +74,10 @@ test('Rust engine round-trip: load, slice, stats, sort, filter, export', { skip:
     const ageInsight = insights.find((i) => i.columnIndex === 1);
     assert.equal(ageInsight?.kind, 'numeric');
 
-    // Sort by age ascending puts missing (Carol) last
-    engine.sort(1, true);
+    // Sort by age ascending puts missing (Carol) last. The engine's
+    // sort API now takes a multi-key spec list; single-column sort is
+    // just a one-element list.
+    engine.sort([{ columnIndex: 1, ascending: true }]);
     const sorted = engine.getSlice(0, 10);
     assert.equal(sorted.rows[0]?.[0], 'Bob'); // 25
     assert.equal(sorted.rows[1]?.[0], 'Alice'); // 30
@@ -89,6 +91,16 @@ test('Rust engine round-trip: load, slice, stats, sort, filter, export', { skip:
     const filtered = engine.getSlice(0, 10);
     assert.equal(filtered.rows.length, 2);
     assert.ok(filtered.rows.every((r) => r[2] === 'NY'));
+
+    // Filter + sort now compose: applying a sort while a filter is
+    // active should keep the filter (the previous engine version wiped
+    // it). NY rows are Alice (30) and Dave (45); descending by age
+    // puts Dave first.
+    engine.sort([{ columnIndex: 1, ascending: false }]);
+    const filteredAndSorted = engine.getSlice(0, 10);
+    assert.equal(filteredAndSorted.rows.length, 2);
+    assert.equal(filteredAndSorted.rows[0]?.[0], 'Dave');
+    assert.equal(filteredAndSorted.rows[1]?.[0], 'Alice');
 
     // Substring search works against the current view order
     engine.resetView();

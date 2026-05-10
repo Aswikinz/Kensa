@@ -85,6 +85,17 @@ pub struct FilterSpec {
     pub case_insensitive: Option<bool>,
 }
 
+/// One key in a multi-column sort. Listed in priority order on the
+/// engine call: the first entry is the primary sort key, the second is
+/// the tiebreaker, and so on. Stable across keys — rows that are equal
+/// on every key keep their relative input order, which matters when
+/// the input is itself the output of a filter.
+#[napi(object)]
+pub struct SortSpec {
+    pub column_index: u32,
+    pub ascending: bool,
+}
+
 #[napi(object)]
 pub struct ExamplePair {
     pub input: String,

@@ -17,6 +17,23 @@ import type {
 } from '../../shared/types';
 import { postMessage } from '../vscodeApi';
 
+/** Quick-filter ops that can never coexist on the same column. The
+ *  groups are AND-disjoint — a single value cannot satisfy both. We
+ *  keep this here (rather than as a hardcoded list inside one action)
+ *  so the column-header UI can ALSO consult it when deciding which
+ *  toggle states to show as active for a given column. */
+const QUICK_OP_CONFLICT_GROUPS: ReadonlyArray<ReadonlyArray<FilterSpec['op']>> = [
+  ['is_missing', 'is_not_missing'],
+  ['is_duplicated', 'is_unique']
+];
+
+function quickOpConflicts(op: FilterSpec['op']): ReadonlyArray<FilterSpec['op']> {
+  for (const group of QUICK_OP_CONFLICT_GROUPS) {
+    if (group.includes(op)) return group;
+  }
+  return [];
+}
+
 export interface KensaState {
   // Server state
   slice: DataSlice | null;
@@ -51,8 +68,15 @@ export interface KensaState {
   // Active view: the sort + filter list currently applied to the grid. We
   // track them in the webview so the Toolbar can show a live count and
   // individual column headers can clear only their own filters.
+  //
+  // `activeSorts` is an ordered list, not a single sort, so users can
+  // build a multi-key sort (e.g. group by `region` ASC, then within
+  // each region order by `revenue` DESC). The order in the array is
+  // the priority — index 0 is the primary key. Empty array means
+  // unsorted. The single-sort code path was a hard limitation of the
+  // earlier design that this store now lifts.
   activeFilters: FilterSpec[];
-  activeSort: SortSpec | null;
+  activeSorts: SortSpec[];
 
   // UI state
   selectedColumn: number | null;
@@ -117,7 +141,22 @@ export interface KensaState {
   removeFilterAt: (index: number) => void;
   removeColumnFilter: (columnIndex: number) => void;
   clearAllFilters: () => void;
-  applySort: (sort: SortSpec | null) => void;
+
+  /** Toggle a sort on a column.
+   *  - If the column isn't already sorted, append it to `activeSorts`
+   *    at the lowest priority (so the user's first click is primary,
+   *    next click on a different column is secondary, etc.).
+   *  - If the column is already sorted in the same direction, remove
+   *    its entry (clicking "asc" twice clears the sort).
+   *  - If the column is already sorted in the opposite direction,
+   *    flip just that entry's direction in place (its priority slot
+   *    stays put). */
+  toggleSort: (sort: SortSpec) => void;
+  /** Drop the sort entry for one column without touching the others. */
+  removeSort: (columnIndex: number) => void;
+  /** Replace the entire sort list — used by the "clear all" path and
+   *  by message handlers that need to overwrite from outside. */
+  setSorts: (sorts: SortSpec[]) => void;
 
   setColumnSearchQuery: (q: string) => void;
   requestScrollToColumn: (name: string) => void;
@@ -140,7 +179,7 @@ export const useKensaStore = create<KensaState>((set) => ({
   switching: false,
   error: null,
   activeFilters: [],
-  activeSort: null,
+  activeSorts: [],
   columnSearchQuery: '',
   scrollToColumnToken: 0,
   scrollToColumnName: null,
@@ -218,7 +257,7 @@ export const useKensaStore = create<KensaState>((set) => ({
   setEngine: (engine) => set({ engine }),
   setSource: (source) =>
     // Changing source = new panel load — drop any stale filter/sort state.
-    set({ source, activeFilters: [], activeSort: null }),
+    set({ source, activeFilters: [], activeSorts: [] }),
   setFileName: (fileName) => set({ fileName }),
   setLoading: (loading) => set({ loading }),
   setSwitching: (switching) => set({ switching }),
@@ -235,23 +274,25 @@ export const useKensaStore = create<KensaState>((set) => ({
   toggleOperationsPanel: () => set((s) => ({ showOperationsPanel: !s.showOperationsPanel })),
   toggleCodePreview: () => set((s) => ({ showCodePreview: !s.showCodePreview })),
 
-  // Quick-filter ops (from the column menu) are mutually exclusive on
-  // the same column — selecting "Only missing" after "Only unique"
-  // replaces the earlier choice. Advanced-filter ops stack freely
-  // alongside the quick filter. The distinction lets a user combine
-  // "hide missing" (quick) with "contains 'foo'" (advanced) on one
-  // column, which the old single-filter-per-column semantics blocked.
+  // Quick-filter ops (from the column menu) split into two conflict
+  // groups; only ops in the SAME group evict each other on the same
+  // column.
+  //
+  //   Group A: is_missing  / is_not_missing  (a value can't be both)
+  //   Group B: is_duplicated / is_unique     (a value can't be both)
+  //
+  // Cross-group combinations stack freely, so a user can ask for
+  // "non-missing AND unique" on one column without losing one of the
+  // two when they apply the second. The previous version evicted ALL
+  // quick ops on the column whenever any quick op was applied, which
+  // forced the user to manually pick the more important constraint
+  // and silently dropped the other.
   addOrReplaceColumnFilter: (filter) =>
     set((s) => {
-      const QUICK_OPS: FilterSpec['op'][] = [
-        'is_missing',
-        'is_not_missing',
-        'is_duplicated',
-        'is_unique'
-      ];
+      const conflicts = quickOpConflicts(filter.op);
       const next = s.activeFilters.filter(
         (f) =>
-          !(f.columnIndex === filter.columnIndex && QUICK_OPS.includes(f.op))
+          !(f.columnIndex === filter.columnIndex && conflicts.includes(f.op))
       );
       next.push(filter);
       postMessage({ type: 'applyFilter', filters: next });
@@ -293,14 +334,42 @@ export const useKensaStore = create<KensaState>((set) => ({
   clearAllFilters: () =>
     set(() => {
       postMessage({ type: 'applyFilter', filters: [] });
-      postMessage({ type: 'applySort', sort: null });
-      return { activeFilters: [], activeSort: null };
+      postMessage({ type: 'applySort', sorts: [] });
+      return { activeFilters: [], activeSorts: [] };
     }),
 
-  applySort: (sort) =>
+  toggleSort: (sort) =>
+    set((s) => {
+      const existing = s.activeSorts.find((x) => x.columnIndex === sort.columnIndex);
+      let next: SortSpec[];
+      if (!existing) {
+        // First time we sort this column — append at lowest priority.
+        next = [...s.activeSorts, sort];
+      } else if (existing.ascending === sort.ascending) {
+        // Click the same direction the column is already sorted by →
+        // treat as a toggle and remove it from the sort list.
+        next = s.activeSorts.filter((x) => x.columnIndex !== sort.columnIndex);
+      } else {
+        // Different direction → flip in-place; priority slot stays put.
+        next = s.activeSorts.map((x) =>
+          x.columnIndex === sort.columnIndex ? sort : x
+        );
+      }
+      postMessage({ type: 'applySort', sorts: next });
+      return { activeSorts: next };
+    }),
+
+  removeSort: (columnIndex) =>
+    set((s) => {
+      const next = s.activeSorts.filter((x) => x.columnIndex !== columnIndex);
+      postMessage({ type: 'applySort', sorts: next });
+      return { activeSorts: next };
+    }),
+
+  setSorts: (sorts) =>
     set(() => {
-      postMessage({ type: 'applySort', sort });
-      return { activeSort: sort };
+      postMessage({ type: 'applySort', sorts });
+      return { activeSorts: sorts };
     }),
 
   setColumnSearchQuery: (q) => set({ columnSearchQuery: q }),

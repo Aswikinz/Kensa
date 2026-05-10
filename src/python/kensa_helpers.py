@@ -40,11 +40,16 @@ except Exception:  # pragma: no cover
 class KensaState:
     """Holds the original DF plus the current working copy + applied steps.
 
-    `view_filters` and `view_sort` are transient, webview-driven view controls
+    `view_filters` and `view_sorts` are transient, webview-driven view controls
     that get re-applied as a mask on top of `working_df` every time the grid
     asks for a slice. They are NOT part of the step history — clearing them
     returns the view to the committed working_df. That's how clearing a
-    quick filter instantly restores hidden rows in Editing mode."""
+    quick filter instantly restores hidden rows in Editing mode.
+
+    `view_sorts` is a list (in priority order, primary first) rather than
+    a single sort, so the user can build a multi-key sort like
+    "by region ASC, then revenue DESC" — Pandas honours that natively
+    via `sort_values(by=[...], ascending=[...])`."""
 
     def __init__(self) -> None:
         self.orig_df: Optional["pd.DataFrame"] = None
@@ -53,7 +58,7 @@ class KensaState:
         self.file_path: Optional[str] = None
         self.steps: List[Dict[str, Any]] = []
         self.view_filters: List[Dict[str, Any]] = []
-        self.view_sort: Optional[Dict[str, Any]] = None
+        self.view_sorts: List[Dict[str, Any]] = []
 
     def replay(self) -> None:
         """Re-apply all stored steps to the original DF."""
@@ -65,19 +70,27 @@ class KensaState:
         self.working_df = df
 
     def viewed_df(self) -> Optional["pd.DataFrame"]:
-        """The working_df after the transient view filters + sort are applied.
+        """The working_df after the transient view filters + sorts are applied.
         Used by every slice/stats query so the view stays in sync with the
-        webview's `activeFilters` without mutating the step history."""
+        webview's `activeFilters` / `activeSorts` without mutating the step
+        history. Filter is applied first so the sort runs over the smaller
+        post-filter row set."""
         if self.working_df is None:
             return None
         df = self.working_df
         if self.view_filters:
             df = _apply_view_filters(df, self.view_filters)
-        if self.view_sort:
-            col = self.view_sort.get("column")
-            asc = bool(self.view_sort.get("ascending", True))
-            if col is not None and col in df.columns:
-                df = df.sort_values(by=col, ascending=asc, na_position="last")
+        if self.view_sorts:
+            cols: List[str] = []
+            ascs: List[bool] = []
+            for s in self.view_sorts:
+                col = s.get("column")
+                if col is None or col not in df.columns:
+                    continue
+                cols.append(col)
+                ascs.append(bool(s.get("ascending", True)))
+            if cols:
+                df = df.sort_values(by=cols, ascending=ascs, na_position="last")
         return df
 
 
@@ -169,7 +182,7 @@ def load_file(path: str, kind: str, options: Optional[Dict[str, Any]] = None) ->
     STATE.file_path = path
     STATE.steps = []
     STATE.view_filters = []
-    STATE.view_sort = None
+    STATE.view_sorts = []
     return dataset_info(df)
 
 
@@ -187,7 +200,7 @@ def load_pickle(path: str) -> Dict[str, Any]:
     STATE.file_path = path
     STATE.steps = []
     STATE.view_filters = []
-    STATE.view_sort = None
+    STATE.view_sorts = []
     return dataset_info(df)
 
 
@@ -269,9 +282,14 @@ def set_view_filters(filters: List[Dict[str, Any]]) -> Dict[str, Any]:
     return get_slice(0, 500)
 
 
-def set_view_sort(sort: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Replace the transient view sort. Pass `None` (or {}) to clear."""
-    STATE.view_sort = sort if sort else None
+def set_view_sorts(sorts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Replace the transient multi-key view sort with the given priority
+    list (primary first). Pass `[]` to clear. Each entry is
+    `{"column": str, "ascending": bool}`. Unknown columns are silently
+    dropped at apply time inside `viewed_df` rather than raising — the
+    webview can hold a stale column reference briefly while a refresh
+    is in flight, and we don't want that to surface as an error toast."""
+    STATE.view_sorts = list(sorts or [])
     return get_slice(0, 500)
 
 
@@ -660,7 +678,7 @@ DISPATCH: Dict[str, Any] = {
     "export_parquet": lambda msg: export_parquet(msg["path"]),
     "diff": lambda msg: diff_against(msg["prev"], msg["new"]),
     "set_view_filters": lambda msg: set_view_filters(msg.get("filters") or []),
-    "set_view_sort": lambda msg: set_view_sort(msg.get("sort")),
+    "set_view_sort": lambda msg: set_view_sorts(msg.get("sorts") or []),
 }
 
 

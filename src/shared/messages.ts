@@ -23,7 +23,7 @@ export type WebviewToExtensionMessage =
   | { type: 'requestDataSlice'; start: number; end: number }
   | { type: 'requestColumnStats'; columnIndex: number }
   | { type: 'requestAllColumnInsights' }
-  | { type: 'applySort'; sort: SortSpec | null }
+  | { type: 'applySort'; sorts: SortSpec[] }
   | { type: 'applyFilter'; filters: FilterSpec[] }
   | { type: 'previewOperation'; operationId: string; parameters: Record<string, unknown> }
   | { type: 'applyOperation'; operationId: string; parameters: Record<string, unknown> }
@@ -34,7 +34,13 @@ export type WebviewToExtensionMessage =
   | { type: 'executeCustomCode'; code: string }
   | { type: 'searchColumns'; query: string }
   | { type: 'switchMode'; mode: EditorMode }
-  | { type: 'refreshSource' }
+  // The webview ships its current view state along with the refresh
+  // request so the extension can re-apply filters + sorts to the
+  // freshly-loaded backend after the underlying data is re-read.
+  // Without this, refreshing a filtered view silently desyncs: the
+  // chip says "1 filter active" while the data shown is unfiltered
+  // because the Python/Rust state was reset by the reload.
+  | { type: 'refreshSource'; filters?: FilterSpec[]; sorts?: SortSpec[] }
   | { type: 'requestPreviewSlice'; start: number; end: number }
   | { type: 'inferFlashFill'; columnIndex: number; examples: Array<{ input: string; output: string }> };
 

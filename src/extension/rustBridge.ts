@@ -62,7 +62,7 @@ export interface RustDataEngine {
   getSlice(start: number, end: number): DataSliceDTO;
   getColumnStats(columnIndex: number): ColumnStatsDTO;
   getAllQuickInsights(): QuickInsightDTO[];
-  sort(columnIndex: number, ascending: boolean): void;
+  sort(sorts: Array<{ columnIndex: number; ascending: boolean }>): void;
   resetView(): void;
   filter(
     filters: Array<{

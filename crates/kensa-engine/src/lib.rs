@@ -31,11 +31,11 @@ mod stats;
 mod types;
 
 use crate::column::{infer_column_dtype, ColumnData};
-use crate::errors::KensaError;
+use crate::errors::{KensaError, KensaResult};
 use crate::filter::{apply_filters, FilterOp};
 use crate::types::{
     ColumnStats, DatasetInfo, DataSlice, ExamplePair, FilterSpec, FrequencyEntry, HistogramBin,
-    QuickInsight,
+    QuickInsight, SortSpec,
 };
 use napi::bindgen_prelude::*;
 use rayon::prelude::*;
@@ -61,10 +61,22 @@ impl DataFrame {
 
 /// The engine exposed to Node.js. Holds at most one dataset at a time — open a
 /// new file and the previous one is dropped.
+///
+/// Filter and sort state are tracked separately from `view_indices` so
+/// they compose. The previous design only stored the materialized
+/// `view_indices` and rebuilt it from a single source (filter OR sort)
+/// on every call — applying a sort would wipe an active filter and
+/// vice versa. Now `active_filters` and `active_sorts` are durable;
+/// `view_indices` is recomputed by `recompute_view` from both. That
+/// matches the Python backend's behaviour (which has always composed
+/// `view_filters` + `view_sort` inside `current_view`) and lets the
+/// webview keep filter+sort layered as the user expects.
 #[napi]
 pub struct DataEngine {
     df: Option<Arc<DataFrame>>,
     view_indices: Option<Vec<usize>>,
+    active_filters: Vec<FilterSpec>,
+    active_sorts: Vec<SortSpec>,
     current_path: Option<String>,
 }
 
@@ -72,7 +84,13 @@ pub struct DataEngine {
 impl DataEngine {
     #[napi(constructor)]
     pub fn new() -> Self {
-        Self { df: None, view_indices: None, current_path: None }
+        Self {
+            df: None,
+            view_indices: None,
+            active_filters: Vec::new(),
+            active_sorts: Vec::new(),
+            current_path: None,
+        }
     }
 
     /// Load a CSV or TSV file. `delimiter` defaults to comma, `encoding`
@@ -94,7 +112,7 @@ impl DataEngine {
             .map_err(to_napi)?;
         let info = build_info(&df);
         self.df = Some(Arc::new(df));
-        self.view_indices = None;
+        self.reset_view_state();
         self.current_path = Some(path);
         Ok(info)
     }
@@ -106,7 +124,7 @@ impl DataEngine {
         let df = parquet_reader::read_parquet(&path).map_err(to_napi)?;
         let info = build_info(&df);
         self.df = Some(Arc::new(df));
-        self.view_indices = None;
+        self.reset_view_state();
         self.current_path = Some(path);
         Ok(info)
     }
@@ -118,7 +136,7 @@ impl DataEngine {
         let df = excel_reader::read_excel(&path, sheet.as_deref()).map_err(to_napi)?;
         let info = build_info(&df);
         self.df = Some(Arc::new(df));
-        self.view_indices = None;
+        self.reset_view_state();
         self.current_path = Some(path);
         Ok(info)
     }
@@ -130,7 +148,7 @@ impl DataEngine {
         let df = jsonl_reader::read_jsonl(&path).map_err(to_napi)?;
         let info = build_info(&df);
         self.df = Some(Arc::new(df));
-        self.view_indices = None;
+        self.reset_view_state();
         self.current_path = Some(path);
         Ok(info)
     }
@@ -190,34 +208,41 @@ impl DataEngine {
         Ok(insights)
     }
 
-    /// Sort by one column in the current view. Replaces `view_indices` with a
-    /// freshly computed permutation. Stable sort.
+    /// Apply a multi-column sort. Pass an empty vec to clear the sort
+    /// without touching the active filter. Replaces the previous
+    /// single-column `sort(col, asc)` API; multi-key callers list the
+    /// keys in priority order (primary first). Filters are preserved
+    /// across this call by `recompute_view`.
     #[napi]
-    pub fn sort(&mut self, col_index: u32, ascending: bool) -> Result<()> {
-        let df = self.require_df()?;
-        let indices = sort::sort_indices(df, col_index as usize, ascending)
-            .map_err(to_napi)?;
-        self.view_indices = Some(indices);
+    pub fn sort(&mut self, sorts: Vec<SortSpec>) -> Result<()> {
+        self.active_sorts = sorts;
+        self.recompute_view().map_err(to_napi)?;
         Ok(())
     }
 
     /// Clear any active sort/filter view and return to dataset order.
     #[napi]
     pub fn reset_view(&mut self) -> Result<()> {
-        self.view_indices = None;
+        self.reset_view_state();
         Ok(())
     }
 
-    /// Apply a list of filter predicates (AND-combined). Returns the number of
-    /// rows that passed the filter.
+    /// Apply a list of filter predicates (AND-combined). Returns the number
+    /// of rows that pass after both filter and the currently-active sort
+    /// have been composed via `recompute_view`. Sorts are preserved
+    /// across this call (the previous design wiped them).
     #[napi]
     pub fn filter(&mut self, filters: Vec<FilterSpec>) -> Result<u32> {
-        let df = self.require_df()?;
-        let predicates: Vec<FilterOp> = filters.iter().map(FilterOp::from_spec).collect();
-        let indices = apply_filters(df, &predicates).map_err(to_napi)?;
-        let n = indices.len();
-        self.view_indices = Some(indices);
-        Ok(n as u32)
+        self.active_filters = filters;
+        self.recompute_view().map_err(to_napi)?;
+        // After recompute_view, view_indices reflects the composed view.
+        // When both filter and sort are empty we leave it as None and
+        // surface `df.row_count` so the UI's row count agrees.
+        Ok(match (&self.df, &self.view_indices) {
+            (_, Some(v)) => v.len() as u32,
+            (Some(df), None) => df.row_count as u32,
+            _ => 0,
+        })
     }
 
     /// Substring search within a column. Returns indices into the current
@@ -305,7 +330,7 @@ impl DataEngine {
     #[napi]
     pub fn clear(&mut self) {
         self.df = None;
-        self.view_indices = None;
+        self.reset_view_state();
         self.current_path = None;
     }
 }
@@ -313,6 +338,54 @@ impl DataEngine {
 // -- helpers ------------------------------------------------------------------
 
 impl DataEngine {
+    /// Drop both the materialized `view_indices` and the inputs that
+    /// produced it (`active_filters`, `active_sorts`). Used by every
+    /// `load_*` entry point and the public `reset_view` so the engine
+    /// can never end up with stale filter/sort state pointing at a
+    /// freshly-loaded dataset whose columns may not even exist anymore.
+    fn reset_view_state(&mut self) {
+        self.view_indices = None;
+        self.active_filters.clear();
+        self.active_sorts.clear();
+    }
+
+    /// Recompute `view_indices` from the current filter + sort state.
+    ///   1. If both are empty → `view_indices = None` (raw dataset order).
+    ///   2. Otherwise build the filtered indices first (or `0..row_count`
+    ///      when there's no filter).
+    ///   3. Then run a stable multi-key sort over those indices.
+    ///
+    /// This is the only place that writes to `view_indices` after a load,
+    /// which guarantees filter+sort always compose: applying a filter
+    /// preserves the active sort order, and applying a sort preserves
+    /// the active filter. Errors propagate unchanged so the napi caller
+    /// sees a typed `KensaError` (e.g. on out-of-range column indices).
+    fn recompute_view(&mut self) -> KensaResult<()> {
+        if self.active_filters.is_empty() && self.active_sorts.is_empty() {
+            self.view_indices = None;
+            return Ok(());
+        }
+        let df = match &self.df {
+            Some(arc) => arc.as_ref(),
+            None => return Ok(()),
+        };
+        let mut indices: Vec<usize> = if self.active_filters.is_empty() {
+            (0..df.row_count).collect()
+        } else {
+            let predicates: Vec<FilterOp> = self
+                .active_filters
+                .iter()
+                .map(FilterOp::from_spec)
+                .collect();
+            apply_filters(df, &predicates)?
+        };
+        if !self.active_sorts.is_empty() {
+            sort::sort_indices_multi(df, &mut indices, &self.active_sorts)?;
+        }
+        self.view_indices = Some(indices);
+        Ok(())
+    }
+
     /// Borrow the currently-loaded `DataFrame` or return a clean napi error.
     ///
     /// We deliberately spell out the `match` + `arc.as_ref()` path instead

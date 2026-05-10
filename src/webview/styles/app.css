@@ -866,6 +866,32 @@
   color: var(--kensa-text-subtle);
   padding: 6px 16px 4px;
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+/* Priority badge for the Sort section header — appears as `#2` next
+ * to the "Sort" label when this column is the secondary sort key in
+ * a multi-column sort, `#3` for the tertiary, etc. Hidden when the
+ * sort list has only one column or this column isn't sorted at all
+ * (controlled by the React component, not CSS). */
+.kensa-col-menu-section-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: var(--kensa-radius-pill);
+  background: var(--kensa-primary-soft);
+  color: var(--kensa-primary-strong);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .kensa-col-menu-icon {
