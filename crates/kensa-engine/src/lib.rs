@@ -365,10 +365,20 @@ impl DataEngine {
             self.view_indices = None;
             return Ok(());
         }
-        let df = match &self.df {
-            Some(arc) => arc.as_ref(),
+        // Clone the Arc out of `self.df` so the `&DataFrame` we use
+        // below is tied to the local `arc` instead of borrowing `self`.
+        // That breaks the read-borrow chain back to `self.active_*`,
+        // which lets the later `self.view_indices = Some(...)` write
+        // happen without overlapping borrows. Functionally identical
+        // (Arc is cheap; we drop the local at end-of-scope) but
+        // gives CodeQL's Rust extractor a borrow story it can prove
+        // safe — the previous `&self.df` borrow plus a same-function
+        // mutable write was triggering `rust/access-invalid-pointer`.
+        let arc = match &self.df {
+            Some(a) => Arc::clone(a),
             None => return Ok(()),
         };
+        let df: &DataFrame = arc.as_ref();
         let mut indices: Vec<usize> = if self.active_filters.is_empty() {
             (0..df.row_count).collect()
         } else {
@@ -382,6 +392,7 @@ impl DataEngine {
         if !self.active_sorts.is_empty() {
             sort::sort_indices_multi(df, &mut indices, &self.active_sorts)?;
         }
+        drop(arc);
         self.view_indices = Some(indices);
         Ok(())
     }

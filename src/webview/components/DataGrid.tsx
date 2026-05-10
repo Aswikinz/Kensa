@@ -47,7 +47,12 @@ function buildModifiedSet(
   return out;
 }
 
-const ROW_HEIGHT = 28;
+// Row height tuned to match Microsoft Data Wrangler's information density.
+// Was 28 (which felt slightly airy on dense numerical tables); 22px keeps
+// numeric values legible at default font sizes while letting ~50% more
+// rows fit on a typical screen. Cell vertical padding tightened in
+// `.kensa-cell` / `.kensa-row-number` to match.
+const ROW_HEIGHT = 22;
 const ROW_NUMBER_WIDTH = 60;
 // 184px fits the worst-case stats row ("99.8% missing · 99.8% unique")
 // on a single line with padding to spare. The earlier 160px default

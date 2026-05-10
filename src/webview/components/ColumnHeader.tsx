@@ -21,7 +21,7 @@ import { QuickInsightViz } from './QuickInsightViz';
 import { ThemedSelect } from './ThemedSelect';
 import { showToast } from './Toast';
 import { alignForDtype, truncateForToast } from '../formatters';
-import type { ColumnInfo, FilterOp, FilterSpec } from '../../shared/types';
+import type { ColumnInfo, FilterOp, FilterSpec, QuickInsight } from '../../shared/types';
 
 interface ColumnHeaderProps {
   readonly column: ColumnInfo;
@@ -86,6 +86,16 @@ export function ColumnHeader({
   const hasFilter = columnFilters.length > 0;
 
   const [menuOpen, setMenuOpen] = useState(false);
+  // Computed pop-out position for the column menu. We anchor it to
+  // viewport coordinates (`position: fixed`) instead of the column
+  // header's box because absolute-positioned `right: 0` clipped the
+  // panel off the right edge of the viewport on rightmost columns
+  // when the window was narrow. With viewport coordinates we can
+  // detect the would-be overflow and flip the panel left of the
+  // trigger instead. `null` while closed; recomputed on every open
+  // and on window resize while open.
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const resizingRef = useRef<{ startX: number; startWidth: number } | null>(null);
   // Ref on the whole column-header element. The outside-click listener
   // uses it to figure out whether a click landed inside this column's
@@ -96,6 +106,51 @@ export function ColumnHeader({
   // so clicks on underlying cells fell through to them instead of
   // closing the menu, forcing users to click the ▾ toggle again.
   const headerRef = useRef<HTMLDivElement>(null);
+
+  // Recompute the menu's pop-out position whenever it opens or the
+  // viewport changes size while open. The menu is roughly 280px wide
+  // and ~340px tall; we shift it left/up if anchoring under the
+  // trigger would let it run past the viewport edges. This replaces
+  // the previous `position: absolute; right: 0` which silently
+  // clipped the menu when the column was near the right edge of a
+  // narrow window.
+  useEffect(() => {
+    if (!menuOpen) {
+      setMenuPos(null);
+      return;
+    }
+    const place = () => {
+      const trigger = menuTriggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const MENU_WIDTH_EST = 280;
+      const MENU_HEIGHT_EST = 380;
+      const MARGIN = 8;
+      const viewportW = document.documentElement.clientWidth;
+      const viewportH = document.documentElement.clientHeight;
+      // Default: anchor menu's right edge to trigger's right edge
+      // (matches the original "▾ button → menu underneath" affordance).
+      let left = rect.right - MENU_WIDTH_EST;
+      let top = rect.bottom + 6;
+      // Keep menu within viewport horizontally — pull right if it
+      // would clip the left edge, pull left if it would clip the right.
+      if (left < MARGIN) left = MARGIN;
+      if (left + MENU_WIDTH_EST > viewportW - MARGIN) {
+        left = viewportW - MENU_WIDTH_EST - MARGIN;
+      }
+      // If anchoring below the trigger overflows the bottom edge,
+      // flip up. The trigger sits in the column header at the top
+      // of the grid, so flipping up rarely happens; this is a
+      // belt-and-braces guard for short viewports.
+      if (top + MENU_HEIGHT_EST > viewportH - MARGIN) {
+        top = Math.max(MARGIN, rect.top - MENU_HEIGHT_EST - 6);
+      }
+      setMenuPos({ top, left });
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -213,6 +268,7 @@ export function ColumnHeader({
           {column.name}
         </div>
         <button
+          ref={menuTriggerRef}
           type="button"
           className="kensa-col-menu-btn"
           onClick={(e) => {
@@ -229,12 +285,18 @@ export function ColumnHeader({
         {insight ? <QuickInsightViz insight={insight} /> : <div className="kensa-insight-placeholder" />}
       </div>
 
-      {menuOpen && (
+      {menuOpen && menuPos && (
         <>
           <div
             className="kensa-col-menu"
             role="menu"
             onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              top: menuPos.top,
+              left: menuPos.left,
+              right: 'auto'
+            }}
           >
             {columnFilters.length > 0 && (
               <>
@@ -320,6 +382,7 @@ export function ColumnHeader({
             <div className="kensa-col-menu-section">Advanced filter</div>
             <AdvancedFilterForm
               dtype={column.dtype}
+              insight={insight}
               onApply={(spec) => addFilter({ ...spec, columnIndex: column.index })}
             />
 
@@ -353,12 +416,26 @@ export function ColumnHeader({
  *  dtype — numeric/datetime columns only expose comparison ops, text
  *  columns expose contains/starts_with/ends_with/regex in addition
  *  to equality. The Apply button stacks the new filter onto whatever
- *  is already on the column (quick filter + any prior advanced ones). */
+ *  is already on the column (quick filter + any prior advanced ones).
+ *
+ *  The value input adapts to the column's character:
+ *    - Boolean columns get a True/False dropdown — typing "true" by
+ *      hand was a paper cut on every boolean filter.
+ *    - Low-cardinality columns (≤ LOW_CARD_VALUE_LIMIT distinct values)
+ *      with an `eq`/`ne` operator get a dropdown of the actual values
+ *      pulled from the cached frequency insight, so the user picks
+ *      from the real categories instead of remembering exact spellings.
+ *    - Everything else stays a free-form text input.
+ */
+const LOW_CARD_VALUE_LIMIT = 12;
+
 function AdvancedFilterForm({
   dtype,
+  insight,
   onApply
 }: {
   readonly dtype: string;
+  readonly insight: QuickInsight | null;
   readonly onApply: (spec: Omit<FilterSpec, 'columnIndex'>) => void;
 }) {
   const ops = useMemo(() => opsForDtype(dtype), [dtype]);
@@ -376,7 +453,22 @@ function AdvancedFilterForm({
     setValue('');
   };
 
-  const showCaseToggle = isTextOp(op);
+  const isBooleanDtype = /bool/i.test(dtype);
+  // Eligibility for the value dropdown: the operator is equality-style
+  // AND we have a cached frequency insight with a small enough
+  // distinct count to enumerate. Frequency entries are top-N (capped
+  // at 5 in Rust, 5 in Python), so we also cross-check `distinct` —
+  // if the column actually has 100 unique values but we're only
+  // seeing the top 5, we'd be misleading the user.
+  const showLowCardDropdown =
+    !isBooleanDtype &&
+    (op === 'eq' || op === 'ne') &&
+    insight?.frequency != null &&
+    insight.distinct > 0 &&
+    insight.distinct <= LOW_CARD_VALUE_LIMIT &&
+    insight.frequency.length === insight.distinct;
+
+  const showCaseToggle = isTextOp(op) && !isBooleanDtype && !showLowCardDropdown;
 
   // Use our themed popover select instead of a native `<select>` — the
   // native one pops up with OS / browser styling for the option list,
@@ -385,6 +477,28 @@ function AdvancedFilterForm({
     () => ops.map((o) => ({ value: o, label: OP_LABELS[o] })),
     [ops]
   );
+
+  // Build the value-dropdown options. `value` strings stay as-is so
+  // the wire format (the `FilterSpec.value` we send to the backend)
+  // is identical to what the user would have typed, keeping the
+  // backend filter evaluation unchanged.
+  const valueOptions = useMemo(() => {
+    if (isBooleanDtype) {
+      return [
+        { value: 'True', label: 'True' },
+        { value: 'False', label: 'False' }
+      ];
+    }
+    if (showLowCardDropdown && insight?.frequency) {
+      return insight.frequency.map((f: { value: string; count: number }) => ({
+        value: f.value,
+        label: `${f.value}  (${f.count})`
+      }));
+    }
+    return [];
+  }, [isBooleanDtype, showLowCardDropdown, insight?.frequency]);
+
+  const useValueDropdown = isBooleanDtype || showLowCardDropdown;
 
   return (
     <div className="kensa-adv-filter">
@@ -397,16 +511,26 @@ function AdvancedFilterForm({
         />
       </div>
       <div className="kensa-adv-filter-row">
-        <input
-          className="kensa-input"
-          type="text"
-          placeholder={placeholderForOp(op)}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') submit();
-          }}
-        />
+        {useValueDropdown ? (
+          <ThemedSelect
+            value={value}
+            options={valueOptions}
+            onChange={(v) => setValue(v)}
+            ariaLabel="Filter value"
+            placeholder={isBooleanDtype ? '— True / False —' : '— pick a value —'}
+          />
+        ) : (
+          <input
+            className="kensa-input"
+            type="text"
+            placeholder={placeholderForOp(op)}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submit();
+            }}
+          />
+        )}
       </div>
       {showCaseToggle && (
         // Aa-icon toggle replacing the native checkbox — same pattern

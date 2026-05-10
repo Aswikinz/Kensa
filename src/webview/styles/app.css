@@ -118,14 +118,15 @@
   padding: 8px 14px;
   min-height: 48px;
   gap: 16px;
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.03) 0%,
-      rgba(255, 255, 255, 0.00) 100%
-    );
-  backdrop-filter: var(--kensa-blur);
-  -webkit-backdrop-filter: var(--kensa-blur);
+  /* Solid editor-background fill instead of the prior translucent
+   * backdrop-blur. The translucent variant looked clean while the
+   * grid sat below the viewport, but on a long table the grid
+   * scrolls UNDER the toolbar — turning the toolbar into a smear of
+   * row contents bleeding through, with nothing pinned visually
+   * separating chrome from data. The solid fill matches VS Code's
+   * own editor toolbars (Output, Search, etc.) and keeps the chip
+   * legible regardless of what's behind it. */
+  background: var(--vscode-editor-background, #1e1e1e);
   border-bottom: 1px solid var(--kensa-border-subtle);
   position: relative;
   z-index: 10;
@@ -520,11 +521,12 @@
 .kensa-row-number {
   color: var(--kensa-text-subtle);
   text-align: right;
-  padding: 7px 10px;
+  padding: 4px 10px;
   font-variant-numeric: tabular-nums;
   border-right: 1px solid var(--kensa-border-subtle);
   font-size: 10px;
   font-weight: 500;
+  line-height: 14px;
 }
 
 .kensa-row-number-clickable {
@@ -543,13 +545,15 @@
 }
 
 .kensa-cell {
-  padding: 7px 10px;
+  padding: 3px 10px;
   border-right: 1px solid var(--kensa-border-subtle);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
   transition: background 120ms ease;
+  font-size: 12px;
+  line-height: 16px;
 }
 
 /* Excel-style alignment hints. Column dtype drives both the cell and

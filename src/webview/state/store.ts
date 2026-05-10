@@ -206,8 +206,15 @@ export const useKensaStore = create<KensaState>((set) => ({
       // its shimmer placeholder forever after a filter or a scroll
       // past the first page, because the extension only re-emits
       // `allColumnInsights` on a subset of those events.
-      const prevNames = s.slice?.columns.map((c) => c.name) ?? null;
-      const nextNames = slice.columns.map((c) => c.name);
+      // Defensive: a malformed slice with missing/null columns could
+      // throw inside `.map`, leaving the store stuck in `loading: true`
+      // forever (the user-visible symptom is a permanent "Loading
+      // dataset…" placeholder). Guard the compare with optional
+      // chaining + ?? so a structurally-bad slice still flips
+      // `loading: false` and surfaces the partial slice rather than
+      // hanging the whole UI.
+      const prevNames = s.slice?.columns?.map((c) => c.name) ?? null;
+      const nextNames = slice?.columns?.map((c) => c.name) ?? [];
       const sameColumns =
         prevNames !== null &&
         prevNames.length === nextNames.length &&
