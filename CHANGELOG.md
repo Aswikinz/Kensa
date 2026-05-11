@@ -4,6 +4,97 @@ All notable changes to Kensa are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Kensa follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12] — 2026-05-10
+
+### Added
+
+- **Multi-column sort.** Click "Sort ascending" on column A, then
+  "Sort ascending" on column B — A becomes the primary key and B
+  the tiebreaker, both honoured in stable order. Each column's
+  sort menu shows a `#N` priority badge when it's part of a
+  multi-key sort. Direction toggles in place; clicking the same
+  direction twice clears that key without disturbing the others.
+  Both engine paths compose: Rust `sort_indices_multi` runs a
+  composite stable comparator over the (possibly filter-derived)
+  index list, Python uses pandas' native
+  `sort_values(by=[…], ascending=[…])`.
+- **Filter + sort now compose properly.** Applying a sort no
+  longer wipes the active filter (and vice versa) on the Rust
+  engine path. The engine tracks `active_filters` and
+  `active_sorts` separately and rebuilds `view_indices` from
+  both via a single `recompute_view`. Python already composed
+  them inside `current_view`; the Rust path was the bug.
+- **Refresh preserves view state.** Clicking the refresh icon
+  with active filters/sorts now re-applies them to the freshly
+  loaded backend, so the chip and the data shown stay in sync.
+  Previously, refresh silently dropped the backend's view state
+  while leaving the webview chip claiming "1 filter active" on
+  top of an unfiltered grid.
+- **Stackable quick filters within compatible groups.** A column
+  can carry one filter from each conflict group simultaneously —
+  e.g. `is_not_missing` AND `is_unique` on the same column. Only
+  ops in the SAME group still evict each other (`is_missing` ↔
+  `is_not_missing`, `is_duplicated` ↔ `is_unique`).
+- **Boolean filter dropdown.** Boolean columns now offer a True /
+  False picker in the advanced-filter form instead of asking the
+  user to type the literal.
+- **Low-cardinality value picker.** Columns with ≤ 12 distinct
+  values get a dropdown of the actual category values + counts
+  (e.g. `Premium  (47)`) for `eq` / `ne` ops, sourced from the
+  cached frequency insight. Saves the user from remembering
+  exact spellings.
+
+### Fixed
+
+- **Loading-stuck regression after filter / scroll.** A malformed
+  slice (missing `columns`) reaching `setSlice` could throw inside
+  `.map`, leaving `loading: true` and the UI stranded on
+  "Loading dataset…". Hardened `setSlice` with optional chaining
+  + `?? []` defaults so any structurally bad slice still flips
+  loading off.
+- **Column ▾ menu clipped off the right edge of narrow windows.**
+  Repositioned via JS-computed `position: fixed` coordinates
+  clamped to the viewport, so the menu shifts left/up as needed
+  instead of disappearing behind the viewport edge.
+- **Toolbar filter chip wrapped onto two lines on narrow viewports**
+  (regression noticed during the v0.1.11 cycle but fully landed
+  here). `white-space: nowrap` + `flex-shrink: 0` on the chip.
+
+### Changed
+
+- **Tab title drops the `Kensa — ` prefix.** Tab now reads just the
+  file or variable name. Matches VS Code's convention for custom
+  editors and gives more horizontal room for long file names.
+- **Wordmark in the toolbar replaced with the brand logo SVG.**
+  Frees up real estate on narrow windows and matches the panel
+  tab icon and marketplace listing.
+- **`enum` parameter dropdowns in the operations panel now match
+  the column-picker chrome** (new `variant="form"` on
+  ThemedSelect). The Change Type form's column dropdown and
+  target-type dropdown no longer visibly drift apart.
+- **Low-cardinality categorical columns render a `value · count`
+  text list** in the column-header viz instead of three stubby
+  horizontal bars (≤ 3 distinct values). The bars carried no
+  comparative information and just made the strip noisier; raw
+  counts are denser and more readable.
+- **Data grid density tightened to match Microsoft Data Wrangler.**
+  Row height 28 → 22, cell vertical padding 7 → 3px with explicit
+  line-height. ~50% more rows fit on screen at default zoom.
+- **Toolbar background made opaque** (solid editor-background fill
+  instead of `backdrop-filter: blur`). The translucent chrome
+  looked clean over an empty grid but turned into a smear of row
+  contents bleeding through once the table scrolled.
+
+### Security
+
+- **Dev-only fast-uri pinned to `^3.1.2`** via `package.json`
+  `overrides`. Closes the path-normalization (CVE in 3.1.0:
+  `%2E` / `%2F` decoded before dot-segment removal) and
+  authority-confusion (CVE in 3.1.1: `%40` decoded inside host)
+  advisories. Pulled transitively by `ajv` (via
+  `@secretlint/config-loader` and `table`); both are dev
+  dependencies, so end users were never affected at runtime.
+
 ## [0.1.11] — 2026-04-30
 
 ### Fixed
