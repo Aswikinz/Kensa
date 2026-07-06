@@ -86,16 +86,6 @@ export function ColumnHeader({
   const hasFilter = columnFilters.length > 0;
 
   const [menuOpen, setMenuOpen] = useState(false);
-  // Computed pop-out position for the column menu. We anchor it to
-  // viewport coordinates (`position: fixed`) instead of the column
-  // header's box because absolute-positioned `right: 0` clipped the
-  // panel off the right edge of the viewport on rightmost columns
-  // when the window was narrow. With viewport coordinates we can
-  // detect the would-be overflow and flip the panel left of the
-  // trigger instead. `null` while closed; recomputed on every open
-  // and on window resize while open.
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const resizingRef = useRef<{ startX: number; startWidth: number } | null>(null);
   // Ref on the whole column-header element. The outside-click listener
   // uses it to figure out whether a click landed inside this column's
@@ -107,51 +97,18 @@ export function ColumnHeader({
   // closing the menu, forcing users to click the ▾ toggle again.
   const headerRef = useRef<HTMLDivElement>(null);
 
-  // Recompute the menu's pop-out position whenever it opens or the
-  // viewport changes size while open. The menu is roughly 280px wide
-  // and ~340px tall; we shift it left/up if anchoring under the
-  // trigger would let it run past the viewport edges. This replaces
-  // the previous `position: absolute; right: 0` which silently
-  // clipped the menu when the column was near the right edge of a
-  // narrow window.
-  useEffect(() => {
-    if (!menuOpen) {
-      setMenuPos(null);
-      return;
-    }
-    const place = () => {
-      const trigger = menuTriggerRef.current;
-      if (!trigger) return;
-      const rect = trigger.getBoundingClientRect();
-      const MENU_WIDTH_EST = 280;
-      const MENU_HEIGHT_EST = 380;
-      const MARGIN = 8;
-      const viewportW = document.documentElement.clientWidth;
-      const viewportH = document.documentElement.clientHeight;
-      // Default: anchor menu's right edge to trigger's right edge
-      // (matches the original "▾ button → menu underneath" affordance).
-      let left = rect.right - MENU_WIDTH_EST;
-      let top = rect.bottom + 6;
-      // Keep menu within viewport horizontally — pull right if it
-      // would clip the left edge, pull left if it would clip the right.
-      if (left < MARGIN) left = MARGIN;
-      if (left + MENU_WIDTH_EST > viewportW - MARGIN) {
-        left = viewportW - MENU_WIDTH_EST - MARGIN;
-      }
-      // If anchoring below the trigger overflows the bottom edge,
-      // flip up. The trigger sits in the column header at the top
-      // of the grid, so flipping up rarely happens; this is a
-      // belt-and-braces guard for short viewports.
-      if (top + MENU_HEIGHT_EST > viewportH - MARGIN) {
-        top = Math.max(MARGIN, rect.top - MENU_HEIGHT_EST - 6);
-      }
-      setMenuPos({ top, left });
-    };
-    place();
-    window.addEventListener('resize', place);
-    return () => window.removeEventListener('resize', place);
-  }, [menuOpen]);
-
+  // The column menu pops up via plain CSS anchoring (see
+  // `.kensa-col-menu` in app.css: `position: absolute; right: 0;
+  // top: calc(100% + 6px)`). A JS-positioned `position: fixed`
+  // variant lived here briefly to clamp the panel to the viewport
+  // on rightmost columns, but the extra two-render handshake
+  // (open → compute getBoundingClientRect → setState → render with
+  // coords) created a noticeable "click did nothing" gap and could
+  // skip showing the menu entirely if the trigger ref hadn't
+  // populated before `place()` ran. The plain CSS anchor renders
+  // synchronously on the same frame as the open click — the
+  // viewport-clipping tradeoff is intentional; the menu has
+  // `max-width: 320px` so even rightmost columns stay readable.
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e: MouseEvent) => {
@@ -268,7 +225,6 @@ export function ColumnHeader({
           {column.name}
         </div>
         <button
-          ref={menuTriggerRef}
           type="button"
           className="kensa-col-menu-btn"
           onClick={(e) => {
@@ -285,18 +241,12 @@ export function ColumnHeader({
         {insight ? <QuickInsightViz insight={insight} /> : <div className="kensa-insight-placeholder" />}
       </div>
 
-      {menuOpen && menuPos && (
+      {menuOpen && (
         <>
           <div
             className="kensa-col-menu"
             role="menu"
             onClick={(e) => e.stopPropagation()}
-            style={{
-              position: 'fixed',
-              top: menuPos.top,
-              left: menuPos.left,
-              right: 'auto'
-            }}
           >
             {columnFilters.length > 0 && (
               <>
