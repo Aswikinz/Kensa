@@ -9,6 +9,9 @@ src/shared/**
 # keep src/python/kensa_helpers.py — it's required at runtime
 !src/python/kensa_helpers.py
 !src/python/requirements.txt
+# Never ship compiled Python bytecode (created by any local py_compile /
+# import of the helpers — stale .pyc for the wrong interpreter version).
+**/__pycache__/**
 
 # Rust crate sources + intermediate target dir (the .node binary is copied
 # into crates/kensa-engine/ by napi build; we still need to include that).

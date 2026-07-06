@@ -199,7 +199,8 @@ export class DataRouter {
     const payload = filters.map((f) => ({
       column: this.lastSlice?.columns[f.columnIndex]?.name ?? '',
       op: f.op,
-      value: f.value ?? ''
+      value: f.value ?? '',
+      caseInsensitive: f.caseInsensitive ?? false
     }));
     await backend.setViewFilters(payload);
   }
