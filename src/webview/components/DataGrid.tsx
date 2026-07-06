@@ -136,8 +136,11 @@ export function DataGrid({ slice: baseSlice }: DataGridProps) {
   };
 
   const copyRowAt = (rowIdx: number): void => {
-    const pageStart = Math.floor(rowIdx / PAGE_SIZE) * PAGE_SIZE;
-    const localIdx = rowIdx - pageStart;
+    // The loaded window starts wherever the last pagination request began
+    // (`slice.startRow` is NOT page-aligned — requests use the first
+    // visible row), so the local index must be relative to startRow.
+    // The old page-aligned math copied the wrong row after any scroll.
+    const localIdx = rowIdx - slice.startRow;
     const row = slice.rows[localIdx];
     if (!row) return;
     const tsv = row

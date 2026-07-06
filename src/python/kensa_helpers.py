@@ -105,9 +105,25 @@ def _apply_view_filters(df: "pd.DataFrame", filters: List[Dict[str, Any]]) -> "p
         col = f.get("column")
         op = f.get("op")
         val = f.get("value")
+        # Sent by the webview for text ops; the Rust engine honors it, so
+        # the Python view path has to as well or the same filter flips
+        # behaviour when the user switches modes.
+        ci = bool(f.get("caseInsensitive"))
         if col is None or col not in df.columns:
             continue
         series = df[col]
+
+        def _text_and_val():
+            # Str-ified series + value for the text ops, folded to lower
+            # case when the filter asks for case-insensitive matching.
+            # Built on demand so numeric/missing ops skip the O(n)
+            # astype(str) conversion.
+            t = series.astype(str)
+            v = str(val)
+            if ci:
+                return t.str.lower(), v.lower()
+            return t, v
+
         try:
             if op == "is_missing":
                 m = series.isna()
@@ -118,9 +134,11 @@ def _apply_view_filters(df: "pd.DataFrame", filters: List[Dict[str, Any]]) -> "p
             elif op == "is_unique":
                 m = ~series.duplicated(keep=False) & series.notna()
             elif op == "eq":
-                m = series.astype(str) == str(val)
+                text, sval = _text_and_val()
+                m = text == sval
             elif op == "ne":
-                m = series.astype(str) != str(val)
+                text, sval = _text_and_val()
+                m = text != sval
             elif op == "gt":
                 m = pd.to_numeric(series, errors="coerce") > float(val)
             elif op == "gte":
@@ -130,13 +148,18 @@ def _apply_view_filters(df: "pd.DataFrame", filters: List[Dict[str, Any]]) -> "p
             elif op == "lte":
                 m = pd.to_numeric(series, errors="coerce") <= float(val)
             elif op == "contains":
-                m = series.astype(str).str.contains(str(val), na=False, regex=False)
+                text, sval = _text_and_val()
+                m = text.str.contains(sval, na=False, regex=False)
             elif op == "starts_with":
-                m = series.astype(str).str.startswith(str(val), na=False)
+                text, sval = _text_and_val()
+                m = text.str.startswith(sval, na=False)
             elif op == "ends_with":
-                m = series.astype(str).str.endswith(str(val), na=False)
+                text, sval = _text_and_val()
+                m = text.str.endswith(sval, na=False)
             elif op == "regex":
-                m = series.astype(str).str.contains(str(val), na=False, regex=True)
+                m = series.astype(str).str.contains(
+                    str(val), na=False, regex=True, case=not ci
+                )
             else:
                 continue
             mask = mask & m.fillna(False)

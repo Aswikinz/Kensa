@@ -209,7 +209,7 @@ export class PythonBackend {
    *  applied as steps, so clearing them (pass `[]`) instantly restores the
    *  previously-hidden rows. */
   async setViewFilters(
-    filters: Array<{ column: string; op: string; value?: string }>
+    filters: Array<{ column: string; op: string; value?: string; caseInsensitive?: boolean }>
   ): Promise<DataSlice> {
     return (await this.request({ cmd: 'set_view_filters', filters })) as DataSlice;
   }
