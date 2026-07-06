@@ -4,6 +4,33 @@ All notable changes to Kensa are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Kensa follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.13] — 2026-07-06
+
+### Fixed
+
+- **Column ▾ menu sometimes did nothing when clicked.** Reverted the
+  JS-positioned (`position: fixed`) column menu introduced in 0.1.12
+  back to plain CSS anchoring. The JS variant's two-render handshake
+  (open → measure trigger → setState → render) could skip rendering
+  the menu entirely when the trigger ref hadn't populated before the
+  placement ran. The menu now renders synchronously on the same frame
+  as the open click. Tradeoff: on the rightmost columns of very
+  narrow windows the menu can clip at the viewport edge again —
+  accepted in exchange for the menu always opening.
+- **"Copy row" copied the wrong row after scrolling.** The row-number
+  click and the context menu's "Copy row (TSV)" computed the row's
+  position in the loaded window with page-aligned math, but slice
+  windows start at the first visible row, not at page boundaries.
+  After any scroll past the first page the copied data came from a
+  different row than the one clicked (or nothing copied at all).
+- **"Ignore case" was silently ignored in Edit mode.** Text filters
+  (equals / not-equals / contains / starts with / ends with / regex)
+  send a case-insensitive flag that the Rust viewing engine honors,
+  but the Python editing-mode path dropped it — the same filter
+  flipped to case-sensitive when switching View → Edit. The flag is
+  now forwarded over the wire and honored by the pandas view-filter
+  evaluation.
+
 ## [0.1.12] — 2026-05-10
 
 ### Added
