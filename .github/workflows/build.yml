@@ -35,7 +35,7 @@ jobs:
     runs-on: ${{ matrix.host }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Node
         uses: actions/setup-node@v6
